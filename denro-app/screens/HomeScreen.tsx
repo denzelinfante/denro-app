@@ -73,7 +73,7 @@ export default function HomeScreen() {
         <TouchableOpacity style={[styles.navIcon, styles.activeIcon]} onPress={() => router.push('/camera')}><Ionicons name="camera" size={24} color="black" /><Text>Camera</Text></TouchableOpacity>
         <TouchableOpacity style={styles.navIcon} onPress={() => router.push('/CollectionScreen')}><FontAwesome name="image" size={24} color="black" /><Text>Collection</Text></TouchableOpacity>
 
-        <TouchableOpacity style={styles.navIcon} onPress={() => router.push('/FormStartSubmission')}>
+        {/* <TouchableOpacity style={styles.navIcon} onPress={() => router.push('/FormStartSubmission')}>
           <Entypo name="list" size={24} color="black" />
           <Text>Template</Text>
         </TouchableOpacity>
@@ -84,7 +84,7 @@ export default function HomeScreen() {
         <TouchableOpacity style={styles.navIcon} onPress={() => router.push('/CollectionScreen')}>
           <FontAwesome name="image" size={24} color="black" />
           <Text>Collection</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
       </View>
 
