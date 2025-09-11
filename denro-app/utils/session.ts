@@ -1,6 +1,6 @@
 // utils/session.ts
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+export const USER_KEY = 'denro:user';
 export type DenroUser = {
   id: number;
   username: string;
@@ -22,10 +22,11 @@ export async function saveUser(user: DenroUser) {
   ]);
 }
 
-export async function getUser(): Promise<DenroUser | null> {
+export async function getCurrentUser(): Promise<DenroUser | null> {
   const raw = await AsyncStorage.getItem(SESSION_KEY);
   return raw ? (JSON.parse(raw) as DenroUser) : null;
 }
+
 
 export async function getEnumeratorId(): Promise<number | null> {
   const raw = await AsyncStorage.getItem(ENUM_ID_KEY);
@@ -35,4 +36,9 @@ export async function getEnumeratorId(): Promise<number | null> {
 
 export async function clearSession() {
   await AsyncStorage.multiRemove([SESSION_KEY, ENUM_ID_KEY]);
+}
+
+
+export async function signOutLocal() {
+  await AsyncStorage.removeItem(USER_KEY);
 }
