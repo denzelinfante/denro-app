@@ -1,5 +1,5 @@
 // screens/Templates_Screen.tsx
-import { supabase } from "../utils/supabase";
+import { supabase } from "../../utils/supabase";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useEffect, useState } from "react";
 import {
@@ -814,28 +814,6 @@ export default function Templates_Screen() {
           </View>
         </Section>
 
-        {/* Type of commercial establishment and/or facility/structure */}
-        <Section title="Type of commercial establishment and/or facility/structure (check as applicable)">
-          <View style={styles.gridTwoCol}>
-            {TYPE_OPTIONS.map((opt) => (
-              <View key={opt} style={styles.gridItem}>
-                <CheckBox label={opt} checked={!!types[opt]} onToggle={() => toggleType(opt)} />
-              </View>
-            ))}
-          </View>
-
-          {types["Others"] && (
-            <View style={{ marginTop: 8 }}>
-              <Text style={styles.smallLabel}>Specify Others</Text>
-              <Input value={typeOther} onChangeText={setTypeOther} />
-            </View>
-          )}
-        </Section>
-
-        {/* Note / description like the paper form */}
-        <Section title="Note: Provide a short description for each establishment/facility/structure as observed">
-          <Input value={notes} onChangeText={setNotes} multiline style={{ height: 90 }} />
-        </Section>
 
         {/* Permits / Issuances */}
         <Section title="Permits / Issuances">
