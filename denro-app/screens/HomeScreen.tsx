@@ -68,6 +68,11 @@ export default function HomeScreen() {
 
       {/* Bottom nav */}
       <View style={styles.bottomNav}>
+<<<<<<<<< Temporary merge branch 1
+        <TouchableOpacity style={styles.navIcon} onPress={() => router.push('../Templates_Screen')}><Entypo name="list" size={24} color="black" /><Text>Template</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.navIcon, styles.activeIcon]} onPress={() => router.push('/camera')}><Ionicons name="camera" size={24} color="black" /><Text>Camera</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.navIcon} onPress={() => router.push('/CollectionScreen')}><FontAwesome name="image" size={24} color="black" /><Text>Collection</Text></TouchableOpacity>
+=========
         <TouchableOpacity style={styles.navIcon} onPress={() => router.push('/FormStartSubmission')}>
           <Entypo name="list" size={24} color="black" />
           <Text>Template</Text>
@@ -80,6 +85,7 @@ export default function HomeScreen() {
           <FontAwesome name="image" size={24} color="black" />
           <Text>Collection</Text>
         </TouchableOpacity>
+>>>>>>>>> Temporary merge branch 2
       </View>
 
       <SettingsMenu visible={menuVisible} onClose={() => setMenuVisible(false)} />
