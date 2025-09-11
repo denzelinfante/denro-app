@@ -1,11 +1,26 @@
 // screens/LoginScreen.tsx
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Dimensions, Alert, ActivityIndicator
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  Image, Dimensions, Alert, ActivityIndicator
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { supabase } from '@/utils/supabase';
-import { saveUser, DenroUser } from '../utils/session';
+import { supabase } from '../utils/supabase'; // adjust if your path is '@/utils/supabase'
+
+type AuthRow = {
+  id: number;
+  username: string;
+  role: string;
+  first_name: string;
+  last_name: string;
+  region_id: number | null;
+  penro_id: number | null;
+  cenro_id: number | null;
+};
+
+const SESSION_KEY = 'denr_user_session';
+const ENUM_ID_KEY = 'denr_enumerator_id';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -14,7 +29,8 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async () => {
-    if (!username.trim() || !password) {
+    const u = username.trim();
+    if (!u || !password) {
       Alert.alert('Missing fields', 'Please enter username and password.');
       return;
     }
@@ -22,28 +38,40 @@ export default function LoginScreen() {
     try {
       setLoading(true);
 
-      // Call your RPC
+      // ❗ No generics here — let’s cast after the call
       const { data, error } = await supabase.rpc('auth_login', {
-        p_username: username.trim(),
+        p_username: u,
         p_password: password,
       });
 
       if (error) throw error;
 
-      const row = (data as DenroUser[] | null)?.[0];
+      const row = ((data as AuthRow[] | null) ?? [])[0] || null;
       if (!row) {
         Alert.alert('Login failed', 'Invalid username or password.');
         return;
       }
 
-      // Save to local session
-      await saveUser(row);
+      // Cache for other screens (Template_Screen reads ENUM_ID_KEY)
+      await AsyncStorage.multiSet([
+        [SESSION_KEY, JSON.stringify(row)],
+        [ENUM_ID_KEY, String(row.id)],
+      ]);
 
-      // Go to your app (home or dashboard)
       router.replace('/home');
     } catch (e: any) {
       console.error(e);
-      Alert.alert('Login error', e?.message ?? 'Could not login.');
+      const msg =
+        typeof e?.message === 'string' ? e.message : 'Could not login. Please try again.';
+      // Helpful hint if permissions are the culprit
+      if (/permission denied|execute/i.test(msg)) {
+        Alert.alert(
+          'Login error',
+          'Permission denied for auth_login(). In SQL, run:\nGRANT EXECUTE ON FUNCTION auth_login(text, text) TO anon, authenticated;'
+        );
+      } else {
+        Alert.alert('Login error', msg);
+      }
     } finally {
       setLoading(false);
     }
@@ -52,7 +80,6 @@ export default function LoginScreen() {
   return (
     <View style={styles.background}>
       <Image source={require('../assets/images/DENR.png')} style={styles.logo} />
-
       <View style={styles.container}>
         <Text style={styles.title}>Login</Text>
 
@@ -77,7 +104,11 @@ export default function LoginScreen() {
           textContentType="password"
         />
 
-        <TouchableOpacity style={[styles.button, loading && { opacity: 0.7 }]} onPress={handleLogin} disabled={loading}>
+        <TouchableOpacity
+          style={[styles.button, loading && { opacity: 0.7 }]}
+          onPress={handleLogin}
+          disabled={loading}
+        >
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
         </TouchableOpacity>
       </View>
