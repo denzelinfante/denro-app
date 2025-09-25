@@ -1,36 +1,31 @@
-// screens/LoginScreen.tsx
 import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  Image, Dimensions, Alert, ActivityIndicator
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Image,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { supabase } from '../utils/supabase'; // adjust if your path is '@/utils/supabase'
-
-type AuthRow = {
-  id: number;
-  username: string;
-  role: string;
-  first_name: string;
-  last_name: string;
-  region_id: number | null;
-  penro_id: number | null;
-  cenro_id: number | null;
-};
-
-const SESSION_KEY = 'denr_user_session';
-const ENUM_ID_KEY = 'denr_enumerator_id';
+import { Ionicons } from '@expo/vector-icons';
+import { supabase } from '@/utils/supabase';
+import { saveUser, DenroUser } from '../utils/session';
 
 export default function LoginScreen() {
   const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async () => {
-    const u = username.trim();
-    if (!u || !password) {
+    if (!username.trim() || !password) {
       Alert.alert('Missing fields', 'Please enter username and password.');
       return;
     }
@@ -38,98 +33,156 @@ export default function LoginScreen() {
     try {
       setLoading(true);
 
-      // ❗ No generics here — let’s cast after the call
+      // Call your RPC
       const { data, error } = await supabase.rpc('auth_login', {
-        p_username: u,
+        p_username: username.trim(),
         p_password: password,
       });
 
       if (error) throw error;
 
-      const row = ((data as AuthRow[] | null) ?? [])[0] || null;
+      const row = (data as DenroUser[] | null)?.[0];
       if (!row) {
         Alert.alert('Login failed', 'Invalid username or password.');
         return;
       }
 
-      // Cache for other screens (Template_Screen reads ENUM_ID_KEY)
-      await AsyncStorage.multiSet([
-        [SESSION_KEY, JSON.stringify(row)],
-        [ENUM_ID_KEY, String(row.id)],
-      ]);
+      // Save to local session
+      await saveUser(row);
 
+      // Go to your app (home or dashboard)
       router.replace('/home');
     } catch (e: any) {
       console.error(e);
-      const msg =
-        typeof e?.message === 'string' ? e.message : 'Could not login. Please try again.';
-      // Helpful hint if permissions are the culprit
-      if (/permission denied|execute/i.test(msg)) {
-        Alert.alert(
-          'Login error',
-          'Permission denied for auth_login(). In SQL, run:\nGRANT EXECUTE ON FUNCTION auth_login(text, text) TO anon, authenticated;'
-        );
-      } else {
-        Alert.alert('Login error', msg);
-      }
+      Alert.alert('Login error', e?.message ?? 'Could not login.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <View style={styles.background}>
-      <Image source={require('../assets/images/DENR.png')} style={styles.logo} />
-      <View style={styles.container}>
-        <Text style={styles.title}>Login</Text>
+    <KeyboardAvoidingView
+      style={styles.flex}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.background}>
+          <Image source={require('../assets/images/DENR.png')} style={styles.logo} />
 
-        <TextInput
-          placeholder="Enter your username"
-          style={styles.input}
-          value={username}
-          onChangeText={setUsername}
-          placeholderTextColor="#666"
-          autoCapitalize="none"
-          autoCorrect={false}
-          textContentType="username"
-        />
+          <View style={styles.container}>
+            <Text style={styles.title}>Login</Text>
 
-        <TextInput
-          placeholder="Enter your password"
-          style={styles.input}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          placeholderTextColor="#666"
-          textContentType="password"
-        />
+            <TextInput
+              placeholder="Enter your username"
+              style={styles.input}
+              value={username}
+              onChangeText={setUsername}
+              placeholderTextColor="#666"
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="username"
+              returnKeyType="next"
+            />
 
-        <TouchableOpacity
-          style={[styles.button, loading && { opacity: 0.7 }]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
-        </TouchableOpacity>
-      </View>
-    </View>
+            <View style={styles.inputRow}>
+              <TextInput
+                placeholder="Enter your password"
+                style={[styles.input, styles.inputWithIcon]}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                placeholderTextColor="#666"
+                textContentType="password"
+                returnKeyType="done"
+                onSubmitEditing={handleLogin}
+              />
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+                onPress={() => setShowPassword((v) => !v)}
+                style={styles.iconButton}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={22}
+                  color="#005288"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={styles.forgotPassword}
+              onPress={() => Alert.alert('Forgot password', 'Please contact an administrator to reset your password.')}
+            >
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.button, loading && { opacity: 0.7 }]} onPress={handleLogin} disabled={loading}>
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
-const { width, height } = Dimensions.get('window');
-
 const styles = StyleSheet.create({
-  background: { flex: 1, width, height, position: 'relative', backgroundColor: '#fff', overflow: 'hidden' },
-  logo: { position: 'absolute', width, height, resizeMode: 'contain', opacity: 0.9, bottom: 160 },
+  flex: { flex: 1 },
+  scroll: { flexGrow: 1 },
+  background: { flex: 1, position: 'relative', backgroundColor: '#fff' },
+  logo: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, resizeMode: 'contain', opacity: 0.9 },
   container: {
-    position: 'absolute', bottom: 50, left: 0, right: 0, height: 363, padding: 25, borderRadius: 20,
-    overflow: 'hidden', backgroundColor: 'rgba(255, 255, 255, 0.5)', shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 5, elevation: 5,
+    marginTop: 'auto',
+    marginBottom: 100,
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.85)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
   },
   title: { fontSize: 28, fontWeight: 'bold', color: '#1a1a1a', marginBottom: 24, textAlign: 'center' },
   input: {
     backgroundColor: 'rgba(255,255,255,0.7)', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10,
-    marginBottom: 16, borderWidth: 1, borderColor: '#ccc', fontSize: 16, color: '#333',
+    marginBottom: 16, borderWidth: 1, borderColor: '#005288', fontSize: 16, color: '#333',
+  },
+  inputRow: {
+    position: 'relative',
+    justifyContent: 'center',
+  },
+  inputWithIcon: {
+    paddingRight: 48,
+  },
+  iconButton: {
+    position: 'absolute',
+    right: 12,
+    top: 0,
+    bottom: 0,
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconText: { fontSize: 18 },
+  forgotPassword: {
+    alignSelf: 'flex-end',
+    marginTop: -8,
+    marginBottom: 8,
+  },
+  forgotText: {
+    color: '#005288',
+    fontSize: 14,
+    fontWeight: '600',
   },
   button: { backgroundColor: '#005288', paddingVertical: 14, borderRadius: 10, marginTop: 20, alignItems: 'center' },
   buttonText: { color: '#fff', fontSize: 18, fontWeight: '600', letterSpacing: 1 },

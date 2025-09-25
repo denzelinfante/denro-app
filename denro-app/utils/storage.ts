@@ -1,4 +1,30 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase, STORAGE_BUCKET } from './supabase';
+
+export async function uploadImageFromUri(uri: string, userId: string) {
+  const fileName = `geo-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+
+  // Convert local file:// URI → blob
+  const res = await fetch(uri);
+  const buffer = await res.arrayBuffer();
+
+  const filePath = `${userId}/${fileName}`;
+
+  const { data, error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(filePath, buffer, {
+      contentType: 'image/jpeg',
+      upsert: false,
+    });
+
+  if (error) throw error;
+
+  // If public bucket:
+  const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(filePath);
+
+  return { path: filePath, publicUrl: urlData.publicUrl };
+}
+
 
 const KEY = 'submissions';
 
