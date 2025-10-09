@@ -11,7 +11,7 @@ import { decode } from "base64-arraybuffer";
 import "react-native-url-polyfill/auto";
 import { useRouter } from "expo-router";
 import { supabase } from "@/utils/supabase";
-import { getCurrentUser, DenroUser, signOutLocal, saveUser } from "@/utils/session";
+import { getCurrentUser, DenroUser, saveUser } from "@/utils/session";
 
 // Ensure Buffer exists if some dependency needs it
 (global as any).Buffer = (global as any).Buffer || require("buffer").Buffer;
@@ -58,9 +58,14 @@ export default function AccountEditScreen() {
           .from("users")
           .select("id, first_name, last_name, email, phone_number, profile_pic, role")
           .eq("id", u.id)
-          .single<UserRow>();
+          .maybeSingle<UserRow>();
 
         if (error) throw error;
+        if (!data) {
+          throw new Error(
+            "Profile not found or not accessible. Please ensure you're signed in and have permission to view your profile."
+          );
+        }
 
         setFirstName(data.first_name ?? "");
         setLastName(data.last_name ?? "");
@@ -187,9 +192,8 @@ export default function AccountEditScreen() {
     }
   };
 
-  const handleLogout = async () => {
-    await signOutLocal();
-    router.replace("/login");
+  const handleBack = () => {
+    router.back();
   };
 
   if (loading) {
@@ -207,8 +211,8 @@ export default function AccountEditScreen() {
       <View style={styles.topBar}>
         <Image source={require("../assets/images/denr-logo.png")} style={styles.logo} />
         <Text style={styles.appName}>DENR GeoCam</Text>
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
-          <Ionicons name="log-out-outline" size={22} color="#ef4444" />
+        <TouchableOpacity onPress={handleBack} style={styles.logoutBtn}>
+          <Ionicons name="chevron-back" size={24} color="#008B8B" />
         </TouchableOpacity>
       </View>
 
