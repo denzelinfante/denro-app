@@ -41,13 +41,13 @@ export default function LoginScreen() {
 
       if (error) throw error;
 
-      const row = (data as DenroUser[] | null)?.[0];
+      const row = (data as any[] | null)?.[0];
       if (!row) {
         Alert.alert('Login failed', 'Invalid username or password.');
         return;
       }
 
-      // Save to local session
+      // Save to local session (saveUser will handle bigint conversion)
       await saveUser(row);
 
       // Go to your app (home or dashboard)
@@ -59,7 +59,6 @@ export default function LoginScreen() {
       setLoading(false);
     }
   };
-
   return (
     <KeyboardAvoidingView
       style={styles.flex}

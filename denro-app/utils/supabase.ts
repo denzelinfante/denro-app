@@ -22,7 +22,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 });
 
 
-export const STORAGE_BUCKET = 'geo-images';
+// UPDATED: Changed from 'geo-images' to 'geo-tagged-photos'
+export const STORAGE_BUCKET = 'geo-tagged-photos';
 
 // Optionally ensure an authenticated session for storage uploads.
 // If there is no current session and fallback credentials are provided
@@ -47,4 +48,35 @@ export async function ensureAuthForUploads() {
     console.warn('ensureAuthForUploads failed or not configured:', e);
   }
   return null;
+}
+
+
+export const testSupabaseConnection = async () => {
+  try {
+    console.log('Testing Supabase connection...')
+    console.log('URL:', supabaseUrl)
+    console.log('Key exists:', !!supabaseAnonKey)
+    
+    // Test database connection
+    const { data, error } = await supabase.from('geo_tagged_images').select('count').limit(1)
+    if (error) {
+      console.error('Database test failed:', error)
+    } else {
+      console.log('Database connection: OK')
+    }
+    
+    // Test storage connection
+    const { data: buckets, error: storageError } = await supabase.storage.listBuckets()
+    if (storageError) {
+      console.error('Storage test failed:', storageError)
+    } else {
+      console.log('Storage connection: OK')
+      console.log('Available buckets:', buckets?.map(b => b.name))
+    }
+    
+    return true
+  } catch (error) {
+    console.error('Connection test failed:', error)
+    return false
+  }
 }

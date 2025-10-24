@@ -1,5 +1,5 @@
 // screens/Enumerators/EnumRep3.tsx
-import React from "react";
+import React, { useState } from "react";
 import {
   ScrollView,
   KeyboardAvoidingView,
@@ -10,8 +10,10 @@ import {
   ActivityIndicator,
   StyleSheet,
   View,
+  Image,
 } from "react-native";
 import { Section, Field, Input, CheckBox } from "../../components/FormParts";
+import SignatureModal from "../SignatureModal";
 
 interface LguPermits {
   mayorsPermit: boolean;
@@ -53,12 +55,11 @@ interface DenrPermits {
 interface FormData {
   lguPermits: LguPermits;
   denrPermits: DenrPermits;
-  attestedByName: string;
-  attestedByPosition: string;
-  attestedBySignature: string;
-  notedByName: string;
-  notedByPosition: string;
-  notedBySignature: string;
+  enumeratorName: string;
+  enumeratorSignature: string;
+  informantName: string;
+  informantSignature: string;
+  informantDate: string;
   reportNotes: string;
   [key: string]: any;
 }
@@ -182,6 +183,9 @@ export default function EnumRep3({
   saveReport,
   saving,
 }: EnumRep3Props) {
+  const [showEnumeratorSignature, setShowEnumeratorSignature] = useState(false);
+  const [showInformantSignature, setShowInformantSignature] = useState(false);
+
   const updateLguPermit = (field: keyof LguPermits, value: any) => {
     updateFormData({
       lguPermits: {
@@ -198,6 +202,14 @@ export default function EnumRep3({
         [field]: value,
       },
     });
+  };
+
+  const handleEnumeratorSignature = (signature: string) => {
+    updateFormData({ enumeratorSignature: signature });
+  };
+
+  const handleInformantSignature = (signature: string) => {
+    updateFormData({ informantSignature: signature });
   };
 
   return (
@@ -329,39 +341,140 @@ export default function EnumRep3({
           </Field>
         </Section>
 
-        <Section title="Attestation & Notation">
-          <Field label="Attested by Name">
-            <Input 
-              value={formData.attestedByName} 
-              onChangeText={(value) => updateFormData({ attestedByName: value })}
-              placeholder="Full name"
-            />
+        <Section title="Signatures">
+          <Text style={styles.subsectionTitle}>Name & Signature of Enumerator</Text>
+          
+          <Field label="Name">
+            <View
+              style={{
+                borderWidth: 1,
+                borderColor: "#cbd5e1",
+                backgroundColor: "#f8fafc",
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+              }}
+            >
+              <Text style={{ color: "#0f172a" }}>
+                {formData.enumeratorName || "Loading..."}
+              </Text>
+            </View>
+            <Text style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+              Auto-filled from your account
+            </Text>
           </Field>
-          <Field label="Position">
-            <Input 
-              value={formData.attestedByPosition} 
-              onChangeText={(value) => updateFormData({ attestedByPosition: value })}
-              placeholder="Position/Title"
-            />
+
+          <Field label="Signature *">
+            <TouchableOpacity
+              style={styles.signatureButton}
+              onPress={() => setShowEnumeratorSignature(true)}
+            >
+              <Text style={styles.signatureButtonText}>
+                {formData.enumeratorSignature ? 'Change Signature' : 'Capture Signature'}
+              </Text>
+            </TouchableOpacity>
+
+            {formData.enumeratorSignature && (
+              <View style={styles.signaturePreview}>
+                <Image
+                  source={{ uri: formData.enumeratorSignature }}
+                  style={styles.signatureImage}
+                  resizeMode="contain"
+                />
+                <TouchableOpacity
+                  style={styles.clearSignatureButton}
+                  onPress={() => updateFormData({ enumeratorSignature: '' })}
+                >
+                  <Text style={styles.clearSignatureText}>Clear</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </Field>
           
-          <Field label="Noted by Name">
-            <Input 
-              value={formData.notedByName} 
-              onChangeText={(value) => updateFormData({ notedByName: value })}
-              placeholder="Full name"
-            />
+          <Field label="Date">
+            <View
+              style={{
+                borderWidth: 1,
+                borderColor: "#cbd5e1",
+                backgroundColor: "#f8fafc",
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+              }}
+            >
+              <Text style={{ color: "#0f172a" }}>
+                {new Date().toISOString().slice(0, 10)}
+              </Text>
+            </View>
+            <Text style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+              Date will be automatically set to today when saving
+            </Text>
           </Field>
-          <Field label="Position">
+
+          <Text style={[styles.subsectionTitle, { marginTop: 20 }]}>
+            Name & Signature of Informant/Proponent
+          </Text>
+          <Text style={styles.noteText}>
+            (Note: if the informant refuses to sign, indicate the reason below)
+          </Text>
+          
+          <Field label="Name">
+            <View
+              style={{
+                borderWidth: 1,
+                borderColor: "#cbd5e1",
+                backgroundColor: "#f8fafc",
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+              }}
+            >
+              <Text style={{ color: "#0f172a" }}>
+                {formData.proponentName || "Not specified"}
+              </Text>
+            </View>
+            <Text style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+              Auto-filled from proponent/establishment name
+            </Text>
+          </Field>
+
+          <Field label="Signature (Optional)">
+            <TouchableOpacity
+              style={styles.signatureButton}
+              onPress={() => setShowInformantSignature(true)}
+            >
+              <Text style={styles.signatureButtonText}>
+                {formData.informantSignature ? 'Change Signature' : 'Capture Signature'}
+              </Text>
+            </TouchableOpacity>
+
+            {formData.informantSignature && (
+              <View style={styles.signaturePreview}>
+                <Image
+                  source={{ uri: formData.informantSignature }}
+                  style={styles.signatureImage}
+                  resizeMode="contain"
+                />
+                <TouchableOpacity
+                  style={styles.clearSignatureButton}
+                  onPress={() => updateFormData({ informantSignature: '' })}
+                >
+                  <Text style={styles.clearSignatureText}>Clear</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </Field>
+          
+          <Field label="Date or Reason if refused">
             <Input 
-              value={formData.notedByPosition} 
-              onChangeText={(value) => updateFormData({ notedByPosition: value })}
-              placeholder="Position/Title"
+              value={formData.informantDate}
+              onChangeText={(value) => updateFormData({ informantDate: value })}
+              placeholder="YYYY-MM-DD or reason if refused to sign"
             />
           </Field>
         </Section>
 
-        <Section title="Additional Notes">
+        <Section title="Additional Notes / Remarks">
           <Input 
             value={formData.reportNotes} 
             onChangeText={(value) => updateFormData({ reportNotes: value })}
@@ -393,6 +506,21 @@ export default function EnumRep3({
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Signature Modals */}
+      <SignatureModal
+        visible={showEnumeratorSignature}
+        onClose={() => setShowEnumeratorSignature(false)}
+        onSave={handleEnumeratorSignature}
+        title="Enumerator Signature"
+      />
+
+      <SignatureModal
+        visible={showInformantSignature}
+        onClose={() => setShowInformantSignature(false)}
+        onSave={handleInformantSignature}
+        title="Informant/Proponent Signature"
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -403,6 +531,18 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 12,
     color: "#1f2937",
+  },
+  subsectionTitle: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginBottom: 8,
+    color: "#374151",
+  },
+  noteText: {
+    fontSize: 11,
+    color: "#6b7280",
+    fontStyle: "italic",
+    marginBottom: 12,
   },
   permitRow: {
     marginBottom: 16,
@@ -429,6 +569,42 @@ const styles = StyleSheet.create({
   },
   permitInput: {
     fontSize: 14,
+  },
+  signatureButton: {
+    backgroundColor: "#0ea5e9",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  signatureButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  signaturePreview: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#cbd5e1",
+    borderRadius: 8,
+    padding: 8,
+    backgroundColor: "#f8fafc",
+  },
+  signatureImage: {
+    width: "100%",
+    height: 100,
+    backgroundColor: "#fff",
+  },
+  clearSignatureButton: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: "#ef4444",
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  clearSignatureText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 12,
   },
   backButton: {
     flex: 1,

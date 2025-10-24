@@ -1,5 +1,5 @@
 // screens/Enumerators/EnumeratorsReport.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { View, ActivityIndicator, Text, Alert } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -17,6 +17,7 @@ interface FormData {
   paId: number | null;
   
   // Proponent data
+  proponentId: number | null;
   proponentName: string;
   proponentContact: string;
   proponentEmail: string;
@@ -25,6 +26,7 @@ interface FormData {
   // Lot data
   location: string;
   lotStatus: string;
+  taxDeclarationNo: string;
   landClassification: string;
   titleNo: string;
   lotNo: string;
@@ -88,13 +90,12 @@ interface FormData {
     otherPermits: string;
   };
   
-  // Attestation
-  attestedByName: string;
-  attestedByPosition: string;
-  attestedBySignature: string;
-  notedByName: string;
-  notedByPosition: string;
-  notedBySignature: string;
+  // Signatures
+  enumeratorName: string;
+  enumeratorSignature: string;
+  informantName: string;
+  informantSignature: string;
+  informantDate: string;
   
   // General notes
   reportNotes: string;
@@ -106,6 +107,7 @@ export default function EnumeratorsReport() {
     primaryGeoImageId?: string;
     latitude?: string;
     longitude?: string;
+    location?: string;
     totalImages?: string;
     imageIds?: string;
   }>();
@@ -119,15 +121,20 @@ export default function EnumeratorsReport() {
   const [paItems, setPaItems] = useState<{ label: string; value: number }[]>([]);
   const [paOpen, setPaOpen] = useState(false);
 
+  // Track if camera data has been processed to prevent loop
+  const processedImageId = useRef<string | null>(null);
+
   // Form data state
   const [formData, setFormData] = useState<FormData>({
     paId: null,
+    proponentId: null,
     proponentName: "",
     proponentContact: "",
     proponentEmail: "",
     proponentAddress: "",
     location: "",
     lotStatus: "",
+    taxDeclarationNo: "",
     landClassification: "",
     titleNo: "",
     lotNo: "",
@@ -180,28 +187,52 @@ export default function EnumeratorsReport() {
       ptoDateIssued: "",
       otherPermits: "",
     },
-    attestedByName: "",
-    attestedByPosition: "",
-    attestedBySignature: "",
-    notedByName: "",
-    notedByPosition: "",
-    notedBySignature: "",
+    enumeratorName: "",
+    enumeratorSignature: "",
+    informantName: "",
+    informantSignature: "",
+    informantDate: "",
     reportNotes: "",
   });
 
-  // Initialize component
+  // Initialize component ONCE
   useEffect(() => {
     const initialize = async () => {
       try {
         // Load protected areas
         await loadProtectedAreas();
         
-        // Get enumerator ID
+        // Get enumerator ID and name
         const enumId = await getEnumeratorId();
         setEnumeratorId(enumId);
-
-        // Process camera return data
-        processCameraData();
+        
+        // Load enumerator name immediately after getting ID
+        if (enumId) {
+          try {
+            const { data: userData, error } = await supabase
+              .from("users")
+              .select("first_name, last_name")
+              .eq("id", enumId)
+              .single();
+            
+            if (error) {
+              console.error("Error loading enumerator name:", error);
+            } else if (userData) {
+              const fullName = `${userData.first_name || ''} ${userData.last_name || ''}`.trim();
+              console.log("Loaded enumerator name:", fullName);
+              setFormData(prev => ({ ...prev, enumeratorName: fullName }));
+            } else {
+              console.warn("No name found for enumerator ID:", enumId);
+              setFormData(prev => ({ ...prev, enumeratorName: "Unknown User" }));
+            }
+          } catch (nameError) {
+            console.error("Exception loading name:", nameError);
+            setFormData(prev => ({ ...prev, enumeratorName: "Error loading name" }));
+          }
+        } else {
+          console.warn("No enumerator ID found");
+          setFormData(prev => ({ ...prev, enumeratorName: "Not logged in" }));
+        }
       } catch (error) {
         console.error("Initialization error:", error);
         Alert.alert("Error", "Failed to initialize form");
@@ -211,7 +242,51 @@ export default function EnumeratorsReport() {
     };
 
     initialize();
-  }, [params]);
+  }, []);
+
+  // Check for camera return data when screen comes into focus
+  useEffect(() => {
+    const checkCameraReturnData = async () => {
+      try {
+        const cameraDataStr = await AsyncStorage.getItem("camera_return_data");
+        if (cameraDataStr) {
+          const cameraData = JSON.parse(cameraDataStr);
+          console.log("Found camera return data:", cameraData);
+          
+          // Process the camera data
+          const parsedPrimaryId = parseInt(cameraData.primaryGeoImageId);
+          const allIds = cameraData.imageIds
+            .split(',')
+            .map((id: string) => parseInt(id.trim()))
+            .filter((id: number) => !isNaN(id));
+          
+          // Update form data with camera data
+          setFormData(prev => ({
+            ...prev,
+            primaryGeoImageId: parsedPrimaryId,
+            latitude: cameraData.latitude,
+            longitude: cameraData.longitude,
+            location: cameraData.location || prev.location,
+            allImageIds: allIds,
+            coordinateSource: "camera",
+          }));
+          
+          // Clear the camera return data
+          await AsyncStorage.removeItem("camera_return_data");
+        }
+      } catch (error) {
+        console.error("Error checking camera return data:", error);
+      }
+    };
+
+    // Check immediately when component mounts or updates
+    checkCameraReturnData();
+    
+    // Set up an interval to check periodically (in case of race conditions)
+    const interval = setInterval(checkCameraReturnData, 500);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const loadProtectedAreas = async () => {
     const { data, error } = await supabase
@@ -251,211 +326,94 @@ export default function EnumeratorsReport() {
     return null;
   };
 
-  const processCameraData = () => {
-    const primaryId = params.primaryGeoImageId;
-    if (primaryId && !isNaN(parseInt(primaryId))) {
-      const parsedPrimaryId = parseInt(primaryId);
-      
-      // Safely handle imageIds
-      let allIds: number[] = [parsedPrimaryId];
-      if (params.imageIds) {
-        const parsedIds = params.imageIds
-          .split(',')
-          .map(id => parseInt(id.trim()))
-          .filter(id => !isNaN(id));
-        
-        if (parsedIds.length > 0) {
-          allIds = parsedIds;
-        }
-      }
-
-      setFormData(prev => ({
-        ...prev,
-        primaryGeoImageId: parsedPrimaryId,
-        latitude: params.latitude || "",
-        longitude: params.longitude || "",
-        allImageIds: allIds,
-        coordinateSource: "camera",
-      }));
-    }
-  };
-
   const updateFormData = (updates: Partial<FormData>) => {
     setFormData(prev => ({ ...prev, ...updates }));
   };
 
-  // Database operations for normalized structure
-  const createProponent = async () => {
-    const { data, error } = await supabase
-      .from("proponents")
-      .insert([{
-        name: formData.proponentName,
-        contact_no: formData.proponentContact || null,
-        email: formData.proponentEmail || null,
-        address: formData.proponentAddress || null,
-      }])
-      .select("id")
-      .single();
+  // Database operations - single establishment_profile table
+  const createEstablishmentProfile = async () => {
+    // Get selected establishment types
+    const selectedTypes = Object.keys(formData.establishmentTypes)
+      .filter(type => formData.establishmentTypes[type]);
+    
+    // Combine selected types and other type
+    let establishmentType = selectedTypes.join(', ');
+    if (formData.establishmentOther && formData.establishmentTypes["Others"]) {
+      establishmentType += establishmentType ? `, ${formData.establishmentOther}` : formData.establishmentOther;
+    }
 
-    if (error) throw error;
-    return data.id;
-  };
-
-  const createLot = async () => {
     const { data, error } = await supabase
-      .from("lots")
+      .from("establishment_profile")
       .insert([{
-        location: formData.location,
+        establishment_name: formData.proponentName,
+        geo_tagged_image_id: formData.primaryGeoImageId,
+        
+        // Lot/Land info
         lot_status: formData.lotStatus || null,
+        tax_declaration_no: formData.taxDeclarationNo || null,
         land_classification: formData.landClassification || null,
         title_no: formData.titleNo || null,
         lot_no: formData.lotNo || null,
         lot_owner: formData.lotOwner || null,
-        area_covered: formData.areaCovered ? parseFloat(formData.areaCovered) : null,
-        management_zone: formData.managementZone || null,
+        area_covered: formData.areaCovered || null,
+        
+        // PA Zone
+        pa_zone: formData.managementZone || null,
         within_easement: formData.withinEasement,
-        notes: formData.lotNotes || null,
-      }])
-      .select("id")
-      .single();
-
-    if (error) throw error;
-    return data.id;
-  };
-
-  const createEstablishmentProfile = async () => {
-    if (!formData.establishmentStatus && Object.keys(formData.establishmentTypes).length === 0) {
-      return null; // Skip if no establishment data
-    }
-
-    const selectedTypes = Object.keys(formData.establishmentTypes)
-      .filter(type => formData.establishmentTypes[type]);
-
-    const { data, error } = await supabase
-      .from("establishment_profiles")
-      .insert([{
-        status: formData.establishmentStatus || null,
-        type_data: selectedTypes,
-        other_type: formData.establishmentOther || null,
-        notes: formData.establishmentNotes || null,
-      }])
-      .select("id")
-      .single();
-
-    if (error) throw error;
-    return data.id;
-  };
-
-  const createLguPermits = async () => {
-    const hasAnyLguPermit = Object.values(formData.lguPermits).some(value => 
-      typeof value === 'boolean' ? value : (value && value.trim() !== '')
-    );
-
-    if (!hasAnyLguPermit) return null;
-
-    const { data, error } = await supabase
-      .from("permits_lgu")
-      .insert([{
-        mayors_permit: formData.lguPermits.mayorsPermit,
-        mp_number: formData.lguPermits.mpNumber || null,
-        mp_date_issued: formData.lguPermits.mpDateIssued || null,
-        mp_expiry_date: formData.lguPermits.mpExpiryDate || null,
-        business_permit: formData.lguPermits.businessPermit,
-        bp_number: formData.lguPermits.bpNumber || null,
-        bp_date_issued: formData.lguPermits.bpDateIssued || null,
-        bp_expiry_date: formData.lguPermits.bpExpiryDate || null,
-        building_permit: formData.lguPermits.buildingPermit,
-        bldg_number: formData.lguPermits.bldgNumber || null,
-        bldg_date_issued: formData.lguPermits.bldgDateIssued || null,
-        bldg_expiry_date: formData.lguPermits.bldgExpiryDate || null,
-      }])
-      .select("id")
-      .single();
-
-    if (error) throw error;
-    return data.id;
-  };
-
-  const createDenrPermits = async () => {
-    const hasAnyDenrPermit = Object.values(formData.denrPermits).some(value =>
-      typeof value === 'boolean' ? value : (value && value.trim() !== '')
-    );
-
-    if (!hasAnyDenrPermit) return null;
-
-    const { data, error } = await supabase
-      .from("permits_denremb")
-      .insert([{
-        pamb_resolution: formData.denrPermits.pambResolution,
+        
+        // Establishment info
+        establishment_status: formData.establishmentStatus || null,
+        establishment_type: establishmentType || null,
+        description: formData.establishmentNotes || null,
+        
+        // LGU Permits
+        mayor_permit_no: formData.lguPermits.mpNumber || null,
+        mayor_permit_issued: formData.lguPermits.mpDateIssued || null,
+        mayor_permit_exp: formData.lguPermits.mpExpiryDate || null,
+        
+        business_permit_no: formData.lguPermits.bpNumber || null,
+        business_permit_issued: formData.lguPermits.bpDateIssued || null,
+        business_permit_exp: formData.lguPermits.bpExpiryDate || null,
+        
+        building_permit_no: formData.lguPermits.bldgNumber || null,
+        building_permit_issued: formData.lguPermits.bldgDateIssued || null,
+        building_permit_exp: formData.lguPermits.bldgExpiryDate || null,
+        
+        // DENR/EMB Permits
         pamb_resolution_no: formData.denrPermits.pambResolutionNo || null,
         pamb_date_issued: formData.denrPermits.pambDateIssued || null,
-        sapa: formData.denrPermits.sapa,
+        
         sapa_no: formData.denrPermits.sapaNo || null,
         sapa_date_issued: formData.denrPermits.sapaDateIssued || null,
-        pacbrma: formData.denrPermits.pacbrma,
+        
         pacbrma_no: formData.denrPermits.pacbrmaNo || null,
         pacbrma_date_issued: formData.denrPermits.pacbrmaDateIssued || null,
-        ecc: formData.denrPermits.ecc,
+        
         ecc_no: formData.denrPermits.eccNo || null,
         ecc_date_issued: formData.denrPermits.eccDateIssued || null,
-        discharge_permit: formData.denrPermits.dischargePermit,
-        dp_no: formData.denrPermits.dpNo || null,
-        dp_date_issued: formData.denrPermits.dpDateIssued || null,
-        permit_to_operate: formData.denrPermits.permitToOperate,
+        
+        discharge_permit_no: formData.denrPermits.dpNo || null,
+        discharge_date_issued: formData.denrPermits.dpDateIssued || null,
+        
         pto_no: formData.denrPermits.ptoNo || null,
         pto_date_issued: formData.denrPermits.ptoDateIssued || null,
-        other_permits: formData.denrPermits.otherPermits || null,
+        
+        other_emb: formData.denrPermits.otherPermits || null,
       }])
       .select("id")
       .single();
 
     if (error) throw error;
     return data.id;
-  };
-
-  const createAttestationNotation = async () => {
-    const hasAttestation = formData.attestedByName || formData.notedByName;
-    if (!hasAttestation) return null;
-
-    const { data, error } = await supabase
-      .from("attestation_notations")
-      .insert([{
-        attested_by_name: formData.attestedByName || null,
-        attested_by_position: formData.attestedByPosition || null,
-        attested_by_signature: formData.attestedBySignature || null,
-        noted_by_name: formData.notedByName || null,
-        noted_by_position: formData.notedByPosition || null,
-        noted_by_signature: formData.notedBySignature || null,
-      }])
-      .select("id")
-      .single();
-
-    if (error) throw error;
-    return data.id;
-  };
-
-  const linkReportImages = async (reportId: number) => {
-    if (formData.allImageIds.length === 0) return;
-
-    const linkData = formData.allImageIds.map((imageId, index) => ({
-      report_id: reportId,
-      geo_image_id: imageId,
-      is_primary: imageId === formData.primaryGeoImageId,
-      sequence_order: index + 1,
-    }));
-
-    const { error } = await supabase
-      .from("report_geo_images")
-      .insert(linkData);
-
-    if (error) throw error;
   };
 
   const validateForm = (): boolean => {
     const required = [
-      { field: formData.proponentName, name: "Proponent Name" },
+      { field: formData.proponentName, name: "Establishment Name" },
       { field: formData.paId, name: "Protected Area" },
       { field: formData.location, name: "Location" },
+      { field: formData.primaryGeoImageId, name: "Geo-tagged Image" },
+      { field: formData.enumeratorSignature, name: "Enumerator Signature" },
     ];
 
     for (const { field, name } of required) {
@@ -463,6 +421,12 @@ export default function EnumeratorsReport() {
         Alert.alert("Validation Error", `${name} is required`);
         return false;
       }
+    }
+
+    // Validate tax declaration number if lot status is "tax declaration"
+    if (formData.lotStatus === "tax declaration" && !formData.taxDeclarationNo?.trim()) {
+      Alert.alert("Validation Error", "Tax Declaration No. is required when Lot Status is Tax Declaration");
+      return false;
     }
 
     if (!enumeratorId) {
@@ -478,48 +442,155 @@ export default function EnumeratorsReport() {
 
     setSaving(true);
     try {
-      // Create all related entities first
-      const proponentId = await createProponent();
-      const lotId = await createLot();
-      const establishmentId = await createEstablishmentProfile();
-      const lguPermitId = await createLguPermits();
-      const denrPermitId = await createDenrPermits();
-      const attestationId = await createAttestationNotation();
+      console.log('Form data before save:', {
+        primaryGeoImageId: formData.primaryGeoImageId,
+        proponentId: formData.proponentId,
+        proponentName: formData.proponentName,
+        latitude: formData.latitude,
+        longitude: formData.longitude,
+        allImageIds: formData.allImageIds
+      });
 
-      // Create the main report
+      // Create establishment profile
+      const establishmentId = await createEstablishmentProfile();
+
+      // Handle proponent - create new or update existing
+      let proponentId = formData.proponentId;
+      
+      if (proponentId) {
+        // Update existing proponent's contact if it was modified
+        const { error: updateError } = await supabase
+          .from("proponents")
+          .update({
+            contact_number: formData.proponentContact || null,
+          })
+          .eq("id", proponentId);
+
+        if (updateError) {
+          console.warn("Warning: Could not update proponent contact:", updateError);
+        }
+      } else {
+        // Create new proponent
+        const { data: proponentData, error: proponentError } = await supabase
+          .from("proponents")
+          .insert([{
+            name: formData.proponentName,
+            contact_number: formData.proponentContact || null,
+          }])
+          .select("id")
+          .single();
+
+        if (proponentError) throw proponentError;
+        proponentId = proponentData.id;
+      }
+
+      // Fetch names for denormalization
+      const { data: enumeratorData } = await supabase
+        .from("users")
+        .select("first_name, last_name")
+        .eq("id", enumeratorId)
+        .single();
+
+      const enumeratorFullName = enumeratorData 
+        ? `${enumeratorData.first_name || ''} ${enumeratorData.last_name || ''}`.trim()
+        : null;
+
+      const { data: paData } = await supabase
+        .from("protected_areas")
+        .select("name")
+        .eq("id", formData.paId)
+        .single();
+
+      // Validate informant date - only save if it's a valid date format
+      const isValidDate = (dateString: string): boolean => {
+        if (!dateString || !dateString.trim()) return false;
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(dateString)) return false;
+        const date = new Date(dateString);
+        return date instanceof Date && !isNaN(date.getTime());
+      };
+
+      const informantDateValue = isValidDate(formData.informantDate) 
+        ? formData.informantDate 
+        : null;
+
+      // Store the reason in remarks if not a valid date
+      let remarksText = formData.reportNotes || '';
+      if (formData.informantDate && !isValidDate(formData.informantDate)) {
+        remarksText = `Informant signature note: ${formData.informantDate}\n\n${remarksText}`.trim();
+      }
+
+      console.log('About to insert enumerators_report with:', {
+        establishment_id: establishmentId,
+        proponent_id: proponentId,
+        geo_tagged_image_id: formData.primaryGeoImageId,
+        total_images: formData.allImageIds.length
+      });
+
+      // Create the main enumerators report
       const { data: reportData, error: reportError } = await supabase
-        .from("enumerators_reports")
+        .from("enumerators_report")
         .insert([{
-          pa_id: formData.paId,
+          establishment_id: establishmentId,
           proponent_id: proponentId,
-          lot_id: lotId,
-          establishment_profile_id: establishmentId,
-          lgu_permit_id: lguPermitId,
-          denr_permit_id: denrPermitId,
-          attestation_id: attestationId,
-          primary_geo_image_id: formData.primaryGeoImageId,
-          latitude: formData.latitude ? parseFloat(formData.latitude) : null,
-          longitude: formData.longitude ? parseFloat(formData.longitude) : null,
-          coordinate_source: formData.coordinateSource,
+          pa_id: formData.paId,
+          geo_tagged_image_id: formData.primaryGeoImageId,
+          report_date: new Date().toISOString().split('T')[0],
           enumerator_id: enumeratorId,
-          notes: formData.reportNotes || null,
+          enumerator_signature_date: new Date().toISOString().split('T')[0],
+          enumerator_signature: formData.enumeratorSignature || null,
+          informant_name: formData.informantName || null,
+          informant_signature_date: informantDateValue,
+          informant_signature: formData.informantSignature || null,
+          remarks: remarksText || null,
+          // Denormalized names for historical record
+          enumerator_name: enumeratorData?.first_name + ' ' + enumeratorData?.last_name || formData.enumeratorName || null,
+          establishment_name: formData.proponentName || null,
+          proponent_name: formData.proponentName || null,
+          pa_name: paData?.name || null,
         }])
         .select("id")
         .single();
 
       if (reportError) throw reportError;
 
-      // Link all captured images to the report
-      await linkReportImages(reportData.id);
+      // Save all captured images to the linking table
+      if (formData.allImageIds && formData.allImageIds.length > 0) {
+        console.log('Saving all images to report:', formData.allImageIds);
+        
+        const reportImages = formData.allImageIds.map((imageId, index) => ({
+          report_id: reportData.id,
+          report_type: 'enumerator',
+          image_id: imageId,
+          is_primary: imageId === formData.primaryGeoImageId,
+          image_sequence: index + 1,
+        }));
+
+        const { error: imagesError } = await supabase
+          .from("reported_images")
+          .insert(reportImages);
+
+        if (imagesError) {
+          console.error('Error saving report images:', imagesError);
+          // Don't throw error here - report is already created, just log the issue
+          Alert.alert(
+            "Warning", 
+            "Report saved but some images may not be linked. Please contact support if images are missing."
+          );
+        } else {
+          console.log(`Successfully linked ${formData.allImageIds.length} images to report`);
+        }
+      }
 
       Alert.alert(
         "Success",
-        "Enumerator report saved successfully",
-        [{ text: "OK", onPress: () => router.replace("/") }]
+        `Enumerator report saved successfully with ${formData.allImageIds.length} image${formData.allImageIds.length !== 1 ? 's' : ''}`,
+        [{ text: "OK", onPress: () => router.replace("/MyReportsScreen") }]
       );
     } catch (error) {
       console.error("Save error:", error);
-      Alert.alert("Error", "Failed to save report. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert("Error", `Failed to save report: ${errorMessage}`);
     } finally {
       setSaving(false);
     }

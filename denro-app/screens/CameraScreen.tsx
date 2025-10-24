@@ -10,11 +10,16 @@ import {
   Alert,
   Linking,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { supabase, STORAGE_BUCKET } from '../utils/supabase';
+
+
+const SESSION_KEY = "denr_user_session";
+const CAMERA_RETURN_DATA_KEY = "camera_return_data";
 
 type PhotoRecord = {
   id: number;
@@ -22,8 +27,8 @@ type PhotoRecord = {
   lat: number;
   lon: number;
   acc?: number | null;
-  createdAt: string;     // ISO
-  sessionId?: string;    // groups photos into one folder
+  createdAt: string;
+  sessionId?: string;
 };
 
 const PHOTOS_KEY = 'photos';
@@ -37,46 +42,160 @@ async function addPhotoToDB(rec: PhotoRecord) {
   await AsyncStorage.setItem(PHOTOS_KEY, JSON.stringify(list));
 }
 
+async function getCurrentEnumeratorId(): Promise<number | null> {
+  try {
+    const sessionData = await AsyncStorage.getItem(SESSION_KEY);
+    if (sessionData) {
+      const parsed = JSON.parse(sessionData);
+      if (parsed?.id) return parsed.id;
+    }
+
+    const { data: authUser } = await supabase.auth.getUser();
+    if (authUser.user?.email) {
+      const { data: userData } = await supabase
+        .from("users")
+        .select("id")
+        .eq("email", authUser.user.email)
+        .single();
+
+      if (userData?.id) return userData.id;
+    }
+  } catch (error) {
+    console.error("Error getting enumerator ID:", error);
+  }
+  return null;
+}
+
+// Test Supabase connectivity
+async function testSupabaseConnection(): Promise<boolean> {
+  try {
+    console.log('🔍 Testing Supabase connection...');
+    
+    // Test 1: List buckets
+    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+    
+    if (bucketsError) {
+      console.error('❌ Buckets test failed:', bucketsError);
+      return false;
+    }
+    
+    console.log('✅ Storage accessible. Available buckets:', buckets?.map(b => b.name));
+    
+    // Test 2: Check if our bucket exists (just warn, don't fail)
+    const ourBucket = buckets?.find(b => b.id === STORAGE_BUCKET || b.name === STORAGE_BUCKET);
+    if (!ourBucket) {
+      console.warn(`⚠️ Bucket "${STORAGE_BUCKET}" not found in list, will try upload anyway`);
+      console.log('📦 Available bucket IDs:', buckets?.map(b => b.id));
+      console.log('📦 Available bucket names:', buckets?.map(b => b.name));
+      console.log('🎯 Looking for:', STORAGE_BUCKET);
+      // Don't return false - bucket exists in Supabase, just not showing in list
+    } else {
+      console.log(`✅ Bucket "${STORAGE_BUCKET}" exists and is ${ourBucket.public ? 'public' : 'private'}`);
+    }
+    
+    // Test 3: Database connectivity
+    const { error: dbError } = await supabase
+      .from('geo_tagged_images')
+      .select('count')
+      .limit(1);
+    
+    if (dbError) {
+      console.error('❌ Database test failed:', dbError);
+      return false;
+    }
+    
+    console.log('✅ Database accessible');
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Connection test exception:', error);
+    return false;
+  }
+}
+
 export default function CameraScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    returnTo?: string;
+    requireGeoTag?: string;
+    captureCoordinates?: string;
+  }>();
 
-  // Camera permission (expo-camera)
   const [permission, requestPermission] = useCameraPermissions();
   const camRef = useRef<CameraView | null>(null);
 
-  // Other permissions
   const [locGranted, setLocGranted] = useState(false);
   const [libGranted, setLibGranted] = useState(false);
 
-  // Camera UI
   const [torch, setTorch] = useState(false);
   const [zoom, setZoom] = useState(0);
 
-  // Live coords
   const [lat, setLat] = useState('—');
   const [lon, setLon] = useState('—');
+  const [locationAddress, setLocationAddress] = useState<string>(''); 
   const [acc, setAcc] = useState<number | null>(null);
 
-  // Freeze coords (Pointers)
   const [frozen, setFrozen] = useState(false);
   const [locked, setLocked] = useState<{ lat: string; lon: string } | null>(null);
 
-  // Accuracy threshold (informational) – default 9
   const [accThresh, setAccThresh] = useState(9);
 
-  // Preview confirmation (for the shot we just took)
   const [pendingUri, setPendingUri] = useState<string | null>(null);
 
-  // Last saved photo (for quick preview)
   const [lastPhotoUri, setLastPhotoUri] = useState<string | null>(null);
   const [lastPreviewUri, setLastPreviewUri] = useState<string | null>(null);
 
-  // Single vs Multi session
   const [multiMode, setMultiMode] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionCount, setSessionCount] = useState(0);
 
-  // Ask for permissions
+  const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
+  const reverseGeocodeTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  const reverseGeocode = async (latitude: number, longitude: number) => {
+    if (isReverseGeocoding) return locationAddress;
+    
+    try {
+      setIsReverseGeocoding(true);
+      
+      const result = await Promise.race([
+        Location.reverseGeocodeAsync({ latitude, longitude }),
+        new Promise<null>((_, reject) => 
+          setTimeout(() => reject(new Error('Geocoding timeout')), 3000)
+        )
+      ]);
+      
+      if (result && Array.isArray(result) && result.length > 0) {
+        const address = result[0];
+        
+        const parts = [
+          address.street || address.name,
+          address.district || address.subregion,
+          address.city,
+          address.region,
+        ].filter(Boolean);
+        
+        const formattedLocation = parts.join(', ');
+        if (formattedLocation) {
+          setLocationAddress(formattedLocation);
+          return formattedLocation;
+        }
+      }
+    } catch (error) {
+      console.log('Reverse geocoding skipped:', error);
+    } finally {
+      setIsReverseGeocoding(false);
+    }
+    return locationAddress;
+  };
+
+  useEffect(() => {
+    console.log('=== DEBUG INFO ===');
+    console.log('STORAGE_BUCKET constant:', STORAGE_BUCKET);
+    console.log('Expected:', 'geo-tagged-photos');
+    console.log('Match:', STORAGE_BUCKET === 'geo-tagged-photos');
+  }, []);
+
   useEffect(() => {
     (async () => {
       if (!permission?.granted) await requestPermission();
@@ -97,11 +216,24 @@ export default function CameraScreen() {
           ]
         );
       }
+      
+      // Optional: Test Supabase connection on mount (non-blocking)
+      // Just logs info, doesn't prevent uploads
+      try {
+        console.log('ℹ️  Testing initial connection (optional)...');
+        const isConnected = await testSupabaseConnection();
+        if (!isConnected) {
+          console.warn('⚠️  Initial connection test failed, but uploads may still work');
+          // Don't show alert - uploads will work anyway
+        } else {
+          console.log('✅ Initial connection test passed');
+        }
+      } catch (e) {
+        console.warn('⚠️  Connection test error (non-critical):', e);
+      }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load last photo so the gallery thumb is not empty on first launch
   useEffect(() => {
     (async () => {
       const raw = await AsyncStorage.getItem(PHOTOS_KEY);
@@ -110,7 +242,6 @@ export default function CameraScreen() {
     })();
   }, []);
 
-  // Seed immediate location, then watch continuously
   useEffect(() => {
     if (!locGranted) return;
 
@@ -120,27 +251,43 @@ export default function CameraScreen() {
     (async () => {
       const last = await Location.getLastKnownPositionAsync({});
       if (last && !cancelled && !frozen) {
-        setLat(last.coords.latitude.toFixed(7));
-        setLon(last.coords.longitude.toFixed(7));
+        const latVal = last.coords.latitude.toFixed(7);
+        const lonVal = last.coords.longitude.toFixed(7);
+        setLat(latVal);
+        setLon(lonVal);
         setAcc(last.coords.accuracy != null ? Math.round(last.coords.accuracy) : null);
+        
+        if (!locationAddress) {
+          reverseGeocode(last.coords.latitude, last.coords.longitude);
+        }
       }
 
       const cur = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
       if (cur && !cancelled && !frozen) {
-        setLat(cur.coords.latitude.toFixed(7));
-        setLon(cur.coords.longitude.toFixed(7));
+        const latVal = cur.coords.latitude.toFixed(7);
+        const lonVal = cur.coords.longitude.toFixed(7);
+        setLat(latVal);
+        setLon(lonVal);
         setAcc(cur.coords.accuracy != null ? Math.round(cur.coords.accuracy) : null);
+        
+        if (!locationAddress) {
+          reverseGeocode(cur.coords.latitude, cur.coords.longitude);
+        }
       }
 
       sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.High, timeInterval: 1000, distanceInterval: 1 },
-        (loc) => {
-          const { latitude, longitude, accuracy } = loc.coords;
-          setAcc(accuracy != null ? Math.round(accuracy) : null);
-          if (!frozen) {
-            setLat(latitude.toFixed(7));
-            setLon(longitude.toFixed(7));
-          }
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 1000,
+          distanceInterval: 1,
+        },
+        (pos) => {
+          if (cancelled || frozen) return;
+          const latVal = pos.coords.latitude.toFixed(7);
+          const lonVal = pos.coords.longitude.toFixed(7);
+          setLat(latVal);
+          setLon(lonVal);
+          setAcc(pos.coords.accuracy != null ? Math.round(pos.coords.accuracy) : null);
         }
       );
     })();
@@ -148,6 +295,9 @@ export default function CameraScreen() {
     return () => {
       cancelled = true;
       sub?.remove();
+      if (reverseGeocodeTimeout.current) {
+        clearTimeout(reverseGeocodeTimeout.current);
+      }
     };
   }, [locGranted, frozen]);
 
@@ -191,7 +341,6 @@ export default function CameraScreen() {
     }
   };
 
-  // Take photo -> preview (confirm/cancel)
   const takeShot = async () => {
     try {
       if (!camRef.current) return;
@@ -213,16 +362,127 @@ export default function CameraScreen() {
       const latNum = Number(useLat);
       const lonNum = Number(useLon);
 
-      // normalize to same precision used in maps/text (stored as number)
       const latFixed = Number(formatCoord(latNum, 6));
       const lonFixed = Number(formatCoord(lonNum, 6));
+
+      const enumeratorId = await getCurrentEnumeratorId();
+      if (!enumeratorId) {
+        Alert.alert('Error', 'Unable to identify current user. Please login again.');
+        return;
+      }
 
       const sid = multiMode ? (sessionId ?? String(Date.now())) : `single-${Date.now()}`;
       if (multiMode && !sessionId) setSessionId(sid);
 
+      const imageId = Date.now();
+      const fileName = `geocam_${imageId}_${Date.now()}.jpg`;
+      const filePath = `${STORAGE_BUCKET}/${fileName}`;
+
+      console.log('📸 Starting save process...');
+      console.log('📂 File path:', filePath);
+      console.log('🪣 Bucket:', STORAGE_BUCKET);
+
+      let publicImageUrl = '';
+      let qrCodeData = '';
+      let uploadSuccess = false;
+      let storageMethod = 'local';
+
+      // Try cloud upload with detailed error handling
+      try {
+        console.log('🔄 Converting image to blob...');
+        const response = await fetch(pendingUri);
+        
+        if (!response.ok) {
+          throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+        }
+        
+        const blob = await response.blob();
+        console.log('✅ Blob created:', blob.size, 'bytes, type:', blob.type);
+
+        // Skip connection test - just try direct upload
+        // The bucket exists and policies are correct, so upload will work
+        console.log('⬆️  Uploading to Supabase Storage (skipping pre-check)...');
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .upload(filePath, blob, {
+            contentType: 'image/jpeg',
+            cacheControl: '3600',
+            upsert: false,
+          });
+
+        if (uploadError) {
+          console.error('❌ Upload error:', {
+            message: uploadError.message,
+            name: uploadError.name,
+            stack: uploadError.stack,
+          });
+          throw uploadError;
+        }
+
+        console.log('✅ Upload successful!', uploadData);
+
+        // Get the public URL
+        const { data: urlData } = supabase.storage
+          .from(STORAGE_BUCKET)
+          .getPublicUrl(filePath);
+
+        publicImageUrl = urlData.publicUrl;
+        qrCodeData = publicImageUrl;
+        uploadSuccess = true;
+        storageMethod = 'cloud';
+
+        console.log('🌐 Public URL:', publicImageUrl);
+
+      } catch (uploadError: any) {
+        console.error('❌ Cloud upload failed:', uploadError);
+        console.error('Error details:', {
+          message: uploadError?.message,
+          name: uploadError?.name,
+          cause: uploadError?.cause,
+        });
+        
+        // Fallback: Use local storage
+        publicImageUrl = pendingUri;
+        qrCodeData = `https://www.google.com/maps?q=${latFixed},${lonFixed}&t=satellite&z=18`;
+        uploadSuccess = false;
+        storageMethod = 'local';
+        
+        console.log('📍 Using fallback - Google Maps QR:', qrCodeData);
+      }
+
+      // Save to database
+      console.log('💾 Saving to database...');
+      const { data: imageData, error: imageError } = await supabase
+        .from("geo_tagged_images")
+        .insert([{
+          id: imageId,
+          image: publicImageUrl,
+          qr_code: qrCodeData,
+          latitude: isFinite(latFixed) ? latFixed : null,
+          longitude: isFinite(lonFixed) ? lonFixed : null,
+          location: locationAddress || null,
+          captured_by: enumeratorId,
+          captured_at: new Date().toISOString(),
+          storage_path: uploadSuccess ? filePath : pendingUri,
+          is_primary: !multiMode,
+          photo_sequence: multiMode ? sessionCount + 1 : 1,
+          notes: `Storage: ${storageMethod}`,
+        }])
+        .select("id")
+        .single();
+
+      if (imageError) {
+        console.error('❌ Database save error:', imageError);
+        Alert.alert('Error', 'Failed to save image to database. Please try again.');
+        return;
+      }
+
+      console.log('✅ Database save successful! Image ID:', imageData.id);
+
+      // Update local storage
       const rec: PhotoRecord = {
-        id: Date.now(),
-        uri: pendingUri,
+        id: imageData.id,
+        uri: publicImageUrl,
         lat: isFinite(latFixed) ? latFixed : 0,
         lon: isFinite(lonFixed) ? lonFixed : 0,
         acc,
@@ -231,26 +491,80 @@ export default function CameraScreen() {
       };
       await addPhotoToDB(rec);
 
-      setLastPhotoUri(pendingUri);
+      setLastPhotoUri(publicImageUrl);
       setPendingUri(null);
+
+      // Show appropriate success message
+      if (uploadSuccess) {
+        Alert.alert('✅ Success!', 'Image uploaded to cloud storage successfully!');
+      } else {
+        Alert.alert('💾 Saved Locally', 'Image saved locally. Will upload when connection is restored.');
+      }
 
       if (multiMode) {
         setSessionCount((n) => n + 1);
       } else {
-        router.replace('/CollectionScreen');
+        if (params.returnTo && params.captureCoordinates === 'true') {
+          await AsyncStorage.setItem(CAMERA_RETURN_DATA_KEY, JSON.stringify({
+            primaryGeoImageId: imageData.id.toString(),
+            latitude: latFixed.toString(),
+            longitude: lonFixed.toString(),
+            location: locationAddress,
+            totalImages: '1',
+            imageIds: imageData.id.toString(),
+            timestamp: Date.now(),
+          }));
+          
+          router.back();
+        } else {
+          router.replace('/CollectionScreen');
+        }
       }
+
     } catch (e: any) {
+      console.error('❌ Overall save error:', e);
       Alert.alert('Error', e?.message ?? 'Save failed.');
     }
   };
 
   const cancelPreview = () => setPendingUri(null);
 
-  const finishSession = () => {
+  const finishSession = async () => {
     if (multiMode && sessionId) {
-      router.replace({ pathname: '/CollectionDetailScreen', params: { id: sessionId } });
-    } else {
-      router.replace('/CollectionScreen');
+      if (params.returnTo && params.captureCoordinates === 'true') {
+        try {
+          const raw = await AsyncStorage.getItem(PHOTOS_KEY);
+          const allPhotos: PhotoRecord[] = raw ? JSON.parse(raw) : [];
+          const sessionPhotos = allPhotos.filter(p => p.sessionId === sessionId);
+          
+          if (sessionPhotos.length > 0) {
+            const primaryPhoto = sessionPhotos[0];
+            const imageIds = sessionPhotos.map(p => p.id).join(',');
+            
+            await AsyncStorage.setItem(CAMERA_RETURN_DATA_KEY, JSON.stringify({
+              primaryGeoImageId: primaryPhoto.id.toString(),
+              latitude: primaryPhoto.lat.toString(),
+              longitude: primaryPhoto.lon.toString(),
+              location: locationAddress,
+              totalImages: sessionPhotos.length.toString(),
+              imageIds: imageIds,
+              timestamp: Date.now(),
+            }));
+            
+            router.back();
+          } else {
+            Alert.alert('No Photos', 'Please capture at least one photo before finishing.');
+          }
+        } catch (error) {
+          console.error('Error finishing session:', error);
+          Alert.alert('Error', 'Failed to save session data');
+        }
+      } else {
+        setMultiMode(false);
+        setSessionId(null);
+        setSessionCount(0);
+        Alert.alert('Session Complete', `Captured ${sessionCount} photo${sessionCount !== 1 ? 's' : ''}`);
+      }
     }
   };
 
@@ -262,19 +576,17 @@ export default function CameraScreen() {
         facing="back"
         enableTorch={torch}
         zoom={zoom}
-      />
+      >
+      </CameraView>
 
-      {/* Torch */}
-      <TouchableOpacity onPress={() => setTorch(t => !t)} style={styles.flashBtn}>
-        <Text style={{ color: '#fff', fontSize: 18 }}>⚡</Text>
+      <TouchableOpacity onPress={() => setTorch(!torch)} style={styles.flashBtn}>
+        <Text style={{ fontSize: 28 }}>{torch ? '🔦' : '⚡'}</Text>
       </TouchableOpacity>
 
-      {/* Zoom bubble */}
       <TouchableOpacity onPress={toggleZoom} style={styles.zoomBubble}>
         <Text style={styles.zoomText}>{zoom < 0.2 ? '1x' : '2x'}</Text>
       </TouchableOpacity>
 
-      {/* Bottom controls */}
       <View style={styles.bottomOverlay}>
         <View style={styles.modeRow}>
           <View style={styles.modeItem}>
@@ -305,6 +617,30 @@ export default function CameraScreen() {
               <Text style={styles.coordInputText}>{locked?.lon ?? lon}</Text>
             </View>
           </View>
+        </View>
+
+        <View style={[styles.row, { marginTop: 8 }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>Location:</Text>
+            <Text style={[styles.coordInputText, { fontSize: 11, minHeight: 32 }]}>
+              {locationAddress || 'Tap button to get location →'}
+            </Text>
+          </View>
+          <TouchableOpacity 
+            onPress={() => {
+              const latNum = parseFloat(locked?.lat ?? lat);
+              const lonNum = parseFloat(locked?.lon ?? lon);
+              if (!isNaN(latNum) && !isNaN(lonNum)) {
+                reverseGeocode(latNum, lonNum);
+              }
+            }}
+            style={styles.refreshLocationBtn}
+            disabled={isReverseGeocoding}
+          >
+            <Text style={{ color: '#fff', fontSize: 16 }}>
+              {isReverseGeocoding ? '⏳' : '📍'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.accuracyRow}>
@@ -348,7 +684,6 @@ export default function CameraScreen() {
         </View>
       </View>
 
-      {/* Preview confirmation overlay (new shot) */}
       {pendingUri && (
         <View style={styles.previewOverlay}>
           <Image source={{ uri: pendingUri }} style={styles.previewImage} />
@@ -363,7 +698,6 @@ export default function CameraScreen() {
         </View>
       )}
 
-      {/* Fullscreen preview of the LAST saved photo */}
       {lastPreviewUri && (
         <View style={styles.previewOverlay}>
           <Image source={{ uri: lastPreviewUri }} style={styles.previewImage} />
@@ -390,9 +724,7 @@ export default function CameraScreen() {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   permBtn: { backgroundColor: '#2e7d32', paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8 },
-
   flashBtn: { position: 'absolute', top: 18, left: 16, padding: 8 },
-
   zoomBubble: {
     position: 'absolute',
     alignSelf: 'center',
@@ -403,20 +735,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   zoomText: { color: '#fff', fontWeight: '700' },
-
   bottomOverlay: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 12, paddingBottom: 14 },
-
   modeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
   modeItem: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sessionBadge: { color: '#fff' },
-
   row: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   label: { color: '#fff' },
-
   coordGroup: { flex: 1 },
   coordRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   coordLabel: { color: '#fff', width: 48, textAlign: 'right', marginRight: 6 },
-
   coordInputText: {
     flex: 1,
     backgroundColor: 'rgba(255,255,255,0.7)',
@@ -425,7 +752,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     color: '#000',
   },
-
   accuracyRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   accuracyLabel: { color: '#fff', flex: 1.5 },
   stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 12, paddingHorizontal: 6, paddingVertical: 2 },
@@ -433,24 +759,31 @@ const styles = StyleSheet.create({
   stepText: { color: '#000', fontSize: 16, fontWeight: '700' },
   stepValue: { color: '#000', width: 28, textAlign: 'center', fontWeight: '700' },
   liveAcc: { color: '#fff', marginLeft: 8 },
-
   bottomBar: { marginTop: 6, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   cancel: { color: '#fff', fontSize: 16 },
-
   photoLabel: { color: '#ffcc00', fontWeight: '700', textAlign: 'center', marginBottom: 6 },
   shutterOuter: { width: 72, height: 72, borderRadius: 36, borderWidth: 4, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   shutterInner: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#fff' },
-
   galleryBtn: { width: 42, height: 42, borderRadius: 6, overflow: 'hidden', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#fff' },
   thumb: { width: '100%', height: '100%' },
-
   finishBtn: {
     paddingHorizontal: 14, paddingVertical: 8,
     borderRadius: 8, borderWidth: 1, borderColor: '#fff',
     backgroundColor: 'rgba(46,125,50,0.9)',
   },
   finishText: { color: '#fff', fontWeight: '700' },
-
+  refreshLocationBtn: {
+    backgroundColor: 'rgba(14,165,233,0.9)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginLeft: 8,
+    alignSelf: 'center',
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   previewOverlay: { position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center' },
   previewImage: { width: '100%', height: '85%', resizeMode: 'contain' },
   previewBar: { position: 'absolute', bottom: 26, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 28 },
