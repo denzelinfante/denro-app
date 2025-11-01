@@ -8,8 +8,8 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 
-console.log(supabaseUrl);
-console.log(supabaseAnonKey);
+// Export the raw URL for diagnostics without logging it automatically.
+export const SUPABASE_URL = supabaseUrl;
 
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

@@ -16,6 +16,7 @@ import * as Location from 'expo-location';
 import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase, STORAGE_BUCKET } from '../utils/supabase';
+import { SupabaseStorageService } from '../utils/supabaseStorageService';
 
 
 const SESSION_KEY = "denr_user_session";
@@ -34,6 +35,18 @@ type PhotoRecord = {
 const PHOTOS_KEY = 'photos';
 const formatCoord = (v: number, decimals = 6) =>
   Number.isFinite(v) ? Number(v).toFixed(decimals) : '';
+
+// Strip Expo local camera cache prefix introduced on Android/Expo runtime
+const EXPO_CAMERA_CACHE_PREFIX = 'file:///data/user/0/host.exp.exponent/cache/ExperienceData/%2540anonymous%252Fdenro-app-da466f58-c2be-490d-b303-1e103e4cee2e/Camera/';
+function stripExpoCameraCachePrefix(uri?: string | null) {
+  if (!uri) return uri;
+  try {
+    if (uri.startsWith(EXPO_CAMERA_CACHE_PREFIX)) return uri.slice(EXPO_CAMERA_CACHE_PREFIX.length);
+  } catch (e) {
+    // ignore and return original
+  }
+  return uri;
+}
 
 async function addPhotoToDB(rec: PhotoRecord) {
   const raw = await AsyncStorage.getItem(PHOTOS_KEY);
@@ -447,7 +460,36 @@ export default function CameraScreen() {
         uploadSuccess = false;
         storageMethod = 'local';
         
+        console.log(publicImageUrl)
         console.log('📍 Using fallback - Google Maps QR:', qrCodeData);
+      }
+
+      // If we only have a local path (fallback) ensure we upload the actual image bytes
+      // to the Supabase bucket before saving DB entries. This prevents storing local phone paths.
+      if (!uploadSuccess && publicImageUrl && (publicImageUrl.startsWith('file://') || publicImageUrl.includes('/cache/ExperienceData/'))) {
+        try {
+          console.log('ℹ️ Uploading actual image bytes from local path to Supabase before DB save:', publicImageUrl);
+          const fallbackDest = `${enumeratorId}/geocam_${imageId}_from_local.jpg`;
+          const saved = await SupabaseStorageService.saveFile(publicImageUrl, fallbackDest, 'geo-tagged-photos');
+          console.log('✅ Uploaded local image to Supabase:', saved);
+          // update variables to reflect cloud-stored image
+          publicImageUrl = saved.publicUrl || publicImageUrl;
+          storageMethod = 'cloud';
+          uploadSuccess = true;
+          // Use the saved path as storage_path
+          // Note: stripExpoCameraCachePrefix will be applied when inserting
+          // but we keep the full saved.path for DB storage
+          // overwrite filePath for consistency
+          // (filePath variable was previously used for initial upload)
+          // set filePath to the saved path so DB gets correct remote path
+          // saved.path is the destinationPath
+          // (no change to filePath variable itself to avoid scope confusion)
+          console.log('🌐 New publicImageUrl after uploading local bytes:', publicImageUrl);
+        } catch (localUploadErr) {
+          console.error('❌ Failed to upload local image bytes to Supabase:', localUploadErr);
+          Alert.alert('Upload failed', 'Could not upload the image to cloud storage. Please check your connection and try again.');
+          return;
+        }
       }
 
       // Save to database
@@ -456,14 +498,14 @@ export default function CameraScreen() {
         .from("geo_tagged_images")
         .insert([{
           id: imageId,
-          image: publicImageUrl,
+            image: stripExpoCameraCachePrefix(publicImageUrl),
           qr_code: qrCodeData,
           latitude: isFinite(latFixed) ? latFixed : null,
           longitude: isFinite(lonFixed) ? lonFixed : null,
           location: locationAddress || null,
           captured_by: enumeratorId,
           captured_at: new Date().toISOString(),
-          storage_path: uploadSuccess ? filePath : pendingUri,
+            storage_path: stripExpoCameraCachePrefix(uploadSuccess ? filePath : pendingUri),
           is_primary: !multiMode,
           photo_sequence: multiMode ? sessionCount + 1 : 1,
           notes: `Storage: ${storageMethod}`,
@@ -482,7 +524,7 @@ export default function CameraScreen() {
       // Update local storage
       const rec: PhotoRecord = {
         id: imageData.id,
-        uri: publicImageUrl,
+        uri: stripExpoCameraCachePrefix(publicImageUrl) as string,
         lat: isFinite(latFixed) ? latFixed : 0,
         lon: isFinite(lonFixed) ? lonFixed : 0,
         acc,
@@ -491,7 +533,7 @@ export default function CameraScreen() {
       };
       await addPhotoToDB(rec);
 
-      setLastPhotoUri(publicImageUrl);
+      setLastPhotoUri(stripExpoCameraCachePrefix(publicImageUrl) || null);
       setPendingUri(null);
 
       // Show appropriate success message

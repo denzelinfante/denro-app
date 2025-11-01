@@ -1,8 +1,29 @@
 // services/SupabaseStorageService.ts
 
-import * as Mime from "mime";
+// Lightweight MIME type resolver for React Native (avoid node-only 'mime' package)
+function getMimeTypeFromPath(path?: string): string | null {
+  if (!path) return null;
+  const parts = path.split('.');
+  if (parts.length === 0) return null;
+  const ext = parts.pop()!.toLowerCase();
+  const map: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    heic: 'image/heic',
+    heif: 'image/heif',
+    mp4: 'video/mp4',
+    mov: 'video/quicktime',
+    pdf: 'application/pdf',
+  };
+  return map[ext] || null;
+}
 import { decode } from "base64-arraybuffer";
+import * as FileSystem from 'expo-file-system';
 import { supabase } from "./supabase";
+import { SUPABASE_URL } from './supabase';
 
 export class SupabaseStorageService {
   /**
@@ -32,16 +53,34 @@ export class SupabaseStorageService {
         contentType = matches[1];
         fileData = decode(matches[2]);
       }
-      // If it's a file path (e.g., from Expo ImagePicker)
+      // If it's a file path or URL (e.g., from Expo ImagePicker or remote URL)
       else if (typeof file === "string") {
-        const response = await fetch(file);
-        fileData = await response.blob();
-        contentType = Mime.getType(destinationPath) || fileData.type;
+        // Remote http(s) URL: use fetch
+        if (file.startsWith('http://') || file.startsWith('https://')) {
+          const response = await fetch(file);
+          if (!response.ok) throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
+          fileData = await response.blob();
+          contentType = getMimeTypeFromPath(destinationPath) || (fileData as any).type;
+        } else {
+          // Local file URI (file:// or content:// or absolute path) — fetch may fail on native runtimes.
+          // Use Expo FileSystem to read as base64, then convert to ArrayBuffer for upload.
+          try {
+            const b64 = await FileSystem.readAsStringAsync(file, { encoding: FileSystem.EncodingType.Base64 });
+            fileData = decode(b64);
+            contentType = getMimeTypeFromPath(destinationPath) || undefined;
+          } catch (fsErr) {
+            // Last resort: try fetch (sometimes works on some platforms)
+            const response = await fetch(file);
+            if (!response.ok) throw new Error(`Fetch failed for local file: ${response.status} ${response.statusText}`);
+            fileData = await response.blob();
+            contentType = getMimeTypeFromPath(destinationPath) || (fileData as any).type;
+          }
+        }
       }
       // Otherwise assume Blob
       else {
         fileData = file;
-        contentType = (file as any).type || Mime.getType(destinationPath) || undefined;
+  contentType = (file as any).type || getMimeTypeFromPath(destinationPath) || undefined;
       }
 
       const options = {
@@ -49,11 +88,43 @@ export class SupabaseStorageService {
         upsert: false,
       };
 
+      // Ensure we pass a Blob or supported binary type to the Supabase client.
+      let uploadPayload: any = fileData;
+      try {
+        if (fileData instanceof ArrayBuffer) {
+          // Convert ArrayBuffer -> Blob for browser/RN environments
+          uploadPayload = new Blob([fileData], { type: contentType || 'application/octet-stream' });
+        }
+      } catch (convErr) {
+        // If Blob constructor isn't available, try Uint8Array fallback
+        try {
+          if (fileData instanceof ArrayBuffer) {
+            uploadPayload = new Uint8Array(fileData);
+          }
+        } catch (fErr) {
+          // leave uploadPayload as-is
+          console.warn('Could not convert fileData to Blob/Uint8Array, proceeding with original payload', fErr);
+        }
+      }
+
+      console.log(`SupabaseStorageService: attempting connectivity check to Supabase URL before upload...`);
+      try {
+        // quick HEAD to Supabase URL to detect network reachability
+        const probe = await fetch(SUPABASE_URL, { method: 'HEAD' });
+        console.log('Supabase connectivity probe status:', probe.status);
+      } catch (probeErr) {
+        console.error('Supabase connectivity probe failed:', probeErr);
+        // Continue to upload attempt, but surface the probe failure in logs.
+      }
+
+      console.log(`SupabaseStorageService: uploading to bucket='${bucketName}' path='${destinationPath}' contentType='${contentType}'`);
       const { data, error } = await supabase.storage
         .from(bucketName)
-        .upload(destinationPath, fileData, options);
+        .upload(destinationPath, uploadPayload, options);
 
-      if (error && error.statusCode !== "409") {
+      // Some Supabase SDK error shapes don't expose a typed statusCode in this environment.
+      // Use a loose any-check so TypeScript doesn't complain, but still allow 409/duplicate handling.
+      if (error && (error as any).statusCode !== 409 && (error as any).statusCode !== '409') {
         throw new Error(`Error uploading file: ${error.message}`);
       }
 
