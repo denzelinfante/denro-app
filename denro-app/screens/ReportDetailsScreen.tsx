@@ -390,7 +390,23 @@ export default function ReportDetailsScreen() {
           <InfoRow label="Protected Area" value={report.pa_name} />
           <InfoRow label="Enumerator" value={report.enumerator_name} />
           <InfoRow label="Submitted On" value={formatDate(report.created_at)} />
+          
         </View>
+
+        <View style={styles.infoRow}>
+  <Text style={styles.label}>Enumerator:</Text>
+
+  <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+    <Text style={styles.value}>{report.enumerator_name}</Text>
+
+  </View>
+</View>
+<TouchableOpacity
+      style={styles.trackButton}
+        onPress={() => router.push(`/TrackRoutes?reportId=${report?.id}`)}
+    >
+      <Text style={styles.trackButtonText}>Track</Text>
+    </TouchableOpacity>
 
         {/* Establishment Details */}
         <View style={styles.section}>
@@ -864,4 +880,22 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '300',
   },
+
+  trackButton: {
+  marginLeft: 6,          // slightly smaller gap
+  backgroundColor: "#22c55e",
+  paddingVertical: 4,     // reduced height
+  paddingHorizontal: 8,   // reduced width
+  borderRadius: 4,        // smaller rounded corners
+  minWidth: 50,           // optional fixed min width
+  alignItems: "center",
+  justifyContent: "center",
+},
+
+trackButtonText: {
+  color: "#fff",
+  fontSize: 10,           // smaller font
+  fontWeight: "600",
+},
+
 });

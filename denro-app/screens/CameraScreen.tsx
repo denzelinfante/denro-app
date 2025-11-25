@@ -51,6 +51,16 @@ function stripExpoCameraCachePrefix(uri?: string | null) {
 async function addPhotoToDB(rec: PhotoRecord) {
   const raw = await AsyncStorage.getItem(PHOTOS_KEY);
   const list: PhotoRecord[] = raw ? JSON.parse(raw) : [];
+
+  // Deduplicate: avoid inserting the same URI twice
+  const exists = list.find((r) => r.uri === rec.uri);
+  if (exists) {
+    // If an older record exists, update it with newer metadata instead of duplicating
+    const updated = list.map((r) => (r.uri === rec.uri ? { ...r, ...rec } : r));
+    await AsyncStorage.setItem(PHOTOS_KEY, JSON.stringify(updated));
+    return;
+  }
+
   list.unshift(rec);
   await AsyncStorage.setItem(PHOTOS_KEY, JSON.stringify(list));
 }
@@ -154,6 +164,7 @@ export default function CameraScreen() {
   const [accThresh, setAccThresh] = useState(9);
 
   const [pendingUri, setPendingUri] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [lastPhotoUri, setLastPhotoUri] = useState<string | null>(null);
   const [lastPreviewUri, setLastPreviewUri] = useState<string | null>(null);
@@ -367,6 +378,12 @@ export default function CameraScreen() {
 
   const confirmSave = async () => {
     if (!pendingUri) return;
+    if (isSaving) {
+      console.log('Save already in progress - ignoring duplicate press');
+      return;
+    }
+
+    setIsSaving(true);
     try {
       if (libGranted) await MediaLibrary.saveToLibraryAsync(pendingUri);
 
@@ -387,9 +404,10 @@ export default function CameraScreen() {
       const sid = multiMode ? (sessionId ?? String(Date.now())) : `single-${Date.now()}`;
       if (multiMode && !sessionId) setSessionId(sid);
 
-      const imageId = Date.now();
-      const fileName = `geocam_${imageId}_${Date.now()}.jpg`;
-      const filePath = `${STORAGE_BUCKET}/${fileName}`;
+  // Use a transient client-side id for filenames only. Do NOT persist this as DB id.
+  const transientId = Date.now();
+  const fileName = `geocam_${transientId}_${Date.now()}.jpg`;
+  const filePath = `${STORAGE_BUCKET}/${fileName}`;
 
       console.log('📸 Starting save process...');
       console.log('📂 File path:', filePath);
@@ -454,9 +472,9 @@ export default function CameraScreen() {
           cause: uploadError?.cause,
         });
         
-        // Fallback: Use local storage
-        publicImageUrl = pendingUri;
-        qrCodeData = `https://www.google.com/maps?q=${latFixed},${lonFixed}&t=satellite&z=18`;
+  // Fallback: Use local storage. Generate a unique QR string by appending imageId so DB unique constraint won't conflict.
+  publicImageUrl = pendingUri;
+  qrCodeData = `https://www.google.com/maps?q=${latFixed},${lonFixed}&t=satellite&z=18&img=${transientId}`;
         uploadSuccess = false;
         storageMethod = 'local';
         
@@ -469,7 +487,7 @@ export default function CameraScreen() {
       if (!uploadSuccess && publicImageUrl && (publicImageUrl.startsWith('file://') || publicImageUrl.includes('/cache/ExperienceData/'))) {
         try {
           console.log('ℹ️ Uploading actual image bytes from local path to Supabase before DB save:', publicImageUrl);
-          const fallbackDest = `${enumeratorId}/geocam_${imageId}_from_local.jpg`;
+          const fallbackDest = `${enumeratorId}/geocam_${transientId}_from_local.jpg`;
           const saved = await SupabaseStorageService.saveFile(publicImageUrl, fallbackDest, 'geo-tagged-photos');
           console.log('✅ Uploaded local image to Supabase:', saved);
           // update variables to reflect cloud-stored image
@@ -492,30 +510,66 @@ export default function CameraScreen() {
         }
       }
 
-      // Save to database
+      // Check for duplicates in DB by exact storage_path or by generated QR
+      console.log('🔎 Checking for duplicate in database...');
+      const storagePathToCheck = stripExpoCameraCachePrefix(uploadSuccess ? filePath : pendingUri) || null;
+      const { data: dupCheck, error: dupErr } = await supabase
+        .from('geo_tagged_images')
+        .select('id')
+        .or(storagePathToCheck ? `storage_path.eq.${storagePathToCheck},qr_code.eq.${qrCodeData}` : `qr_code.eq.${qrCodeData}`)
+        .limit(1)
+        .single();
+
+      if (dupErr && dupErr.code !== 'PGRST116') {
+        // PGRST116 is PostgREST "No rows" for single() - ignore
+        console.warn('Duplicate check returned error (non-fatal):', dupErr);
+      }
+
+      if (dupCheck && dupCheck.id) {
+        console.log('⚠️ Duplicate image detected in DB, skipping insert. ID:', dupCheck.id);
+        // Use the existing id for local storage representation
+        const existingId = dupCheck.id;
+        const rec: PhotoRecord = {
+          id: existingId,
+          uri: stripExpoCameraCachePrefix(publicImageUrl) as string,
+          lat: isFinite(latFixed) ? latFixed : 0,
+          lon: isFinite(lonFixed) ? lonFixed : 0,
+          acc,
+          createdAt: new Date().toISOString(),
+          sessionId: sid,
+        };
+        await addPhotoToDB(rec);
+        setLastPhotoUri(stripExpoCameraCachePrefix(publicImageUrl) || null);
+        setPendingUri(null);
+        setIsSaving(false);
+        Alert.alert('Notice', 'This image was already saved previously.');
+        return;
+      }
+
+      // Save to database - do NOT set id client-side, let DB assign it
       console.log('💾 Saving to database...');
       const { data: imageData, error: imageError } = await supabase
         .from("geo_tagged_images")
         .insert([{
-          id: imageId,
-            image: stripExpoCameraCachePrefix(publicImageUrl),
+          image: stripExpoCameraCachePrefix(publicImageUrl),
           qr_code: qrCodeData,
           latitude: isFinite(latFixed) ? latFixed : null,
           longitude: isFinite(lonFixed) ? lonFixed : null,
           location: locationAddress || null,
           captured_by: enumeratorId,
           captured_at: new Date().toISOString(),
-            storage_path: stripExpoCameraCachePrefix(uploadSuccess ? filePath : pendingUri),
+          storage_path: storagePathToCheck,
           is_primary: !multiMode,
           photo_sequence: multiMode ? sessionCount + 1 : 1,
           notes: `Storage: ${storageMethod}`,
         }])
-        .select("id")
+        .select('id')
         .single();
 
       if (imageError) {
         console.error('❌ Database save error:', imageError);
         Alert.alert('Error', 'Failed to save image to database. Please try again.');
+        setIsSaving(false);
         return;
       }
 
@@ -531,10 +585,11 @@ export default function CameraScreen() {
         createdAt: new Date().toISOString(),
         sessionId: sid,
       };
-      await addPhotoToDB(rec);
+  await addPhotoToDB(rec);
 
-      setLastPhotoUri(stripExpoCameraCachePrefix(publicImageUrl) || null);
-      setPendingUri(null);
+  setLastPhotoUri(stripExpoCameraCachePrefix(publicImageUrl) || null);
+  setPendingUri(null);
+  setIsSaving(false);
 
       // Show appropriate success message
       if (uploadSuccess) {
@@ -566,6 +621,7 @@ export default function CameraScreen() {
     } catch (e: any) {
       console.error('❌ Overall save error:', e);
       Alert.alert('Error', e?.message ?? 'Save failed.');
+      setIsSaving(false);
     }
   };
 
@@ -733,9 +789,13 @@ export default function CameraScreen() {
             <TouchableOpacity style={styles.roundBtn} onPress={cancelPreview}>
               <Text style={{ color: '#fff', fontSize: 20 }}>✕</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.roundBtn, styles.roundConfirm]} onPress={confirmSave}>
-              <Text style={{ color: '#fff', fontSize: 20 }}>✓</Text>
-            </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.roundBtn, styles.roundConfirm, isSaving ? { opacity: 0.6 } : undefined]}
+                onPress={confirmSave}
+                disabled={isSaving}
+              >
+                <Text style={{ color: '#fff', fontSize: 20 }}>{isSaving ? '…' : '✓'}</Text>
+              </TouchableOpacity>
           </View>
         </View>
       )}
