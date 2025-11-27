@@ -1,7 +1,2 @@
-import TrackRoutes from "@/screens/TrackRoutes"
-
-export default function TrackRoutesPage(){
-    return <TrackRoutes/>
-}
-
-
+import TrackRoutes from "../screens/TrackRoutes";
+export default TrackRoutes;
