@@ -11,7 +11,7 @@ import {
   Linking,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import ViewShot, { captureRef } from 'react-native-view-shot';
 import * as MediaLibrary from 'expo-media-library';
 
@@ -83,9 +83,9 @@ const dayKey = (iso: string) => {
   ).padStart(2, '0')}`;
 };
 
-export default function CollectionDetailScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
-  const sessionId = id ?? '';
+export default function CollectionDetailScreen({ sessionId }: { sessionId: string }) {
+
+  
 
   const [photos, setPhotos] = useState<PhotoRecord[]>([]);
   const [fallbackIds, setFallbackIds] = useState<Record<number, boolean>>({});
@@ -204,12 +204,47 @@ export default function CollectionDetailScreen() {
             </View>
           </View>
         );
+        
       })}
+    <TouchableOpacity
+  style={styles.trackBtn}
+  onPress={() => {
+    router.push({
+      pathname: "/TrackRoutes",
+      params: {
+        coords: JSON.stringify(
+          photos.map((p) => ({
+            lat: p.lat,
+            lon: p.lon,
+            id: p.id,
+          }))
+        ),
+      },
+    });
+  }}
+>
+  <Text style={styles.trackText}>Track Routes</Text>
+</TouchableOpacity>
     </ScrollView>
+    
   );
 }
 
 const styles = StyleSheet.create({
+  trackBtn: {
+  marginTop: 20,
+  marginBottom: 40,
+  padding: 14,
+  backgroundColor: "#1976d2",
+  borderRadius: 8,
+  alignItems: "center",
+},
+trackText: {
+  color: "#fff",
+  fontWeight: "bold",
+  fontSize: 16,
+},
+
   emptyWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 
   cardContainer: {
