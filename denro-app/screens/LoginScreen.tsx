@@ -1,3 +1,4 @@
+// screens/LoginScreen.tsx
 import React, { useState } from 'react';
 import {
   View,
@@ -32,13 +33,7 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-<<<<<<< HEAD
       // ✅ Call your secure RPC in Supabase
-=======
-      setLoading(true);
-
-      // Call your RPC
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
       const { data, error } = await supabase.rpc('auth_login', {
         p_username: username.trim(),
         p_password: password,
@@ -50,17 +45,12 @@ export default function LoginScreen() {
         return;
       }
 
-<<<<<<< HEAD
       const row = (data as DenroUser[] | null)?.[0];
-=======
-      const row = (data as any[] | null)?.[0];
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
       if (!row) {
         Alert.alert('Login failed', 'Invalid username or password.');
         return;
       }
 
-<<<<<<< HEAD
       // ✅ Save user to session (local storage)
       await saveUser(row);
 
@@ -69,20 +59,11 @@ export default function LoginScreen() {
     } catch (err: any) {
       console.error('Login error:', err);
       Alert.alert('Error', err.message ?? 'Something went wrong.');
-=======
-      // Save to local session (saveUser will handle bigint conversion)
-      await saveUser(row);
-
-      // Go to your app (home or dashboard)
-      router.replace('/home');
-    } catch (e: any) {
-      console.error(e);
-      Alert.alert('Login error', e?.message ?? 'Could not login.');
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
     } finally {
       setLoading(false);
     }
   };
+
   return (
     <KeyboardAvoidingView
       style={styles.flex}
@@ -94,22 +75,15 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.background}>
-<<<<<<< HEAD
           <Image
             source={require('../assets/images/DENR.png')}
             style={styles.logo}
           />
-=======
-          <Image source={require('../assets/images/DENR.png')} style={styles.logo} />
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
 
           <View style={styles.container}>
             <Text style={styles.title}>Login</Text>
 
-<<<<<<< HEAD
             {/* Username */}
-=======
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
             <TextInput
               placeholder="Enter your username"
               style={styles.input}
@@ -122,10 +96,7 @@ export default function LoginScreen() {
               returnKeyType="next"
             />
 
-<<<<<<< HEAD
             {/* Password */}
-=======
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
             <View style={styles.inputRow}>
               <TextInput
                 placeholder="Enter your password"
@@ -140,13 +111,9 @@ export default function LoginScreen() {
               />
               <TouchableOpacity
                 accessibilityRole="button"
-<<<<<<< HEAD
                 accessibilityLabel={
                   showPassword ? 'Hide password' : 'Show password'
                 }
-=======
-                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
                 onPress={() => setShowPassword((v) => !v)}
                 style={styles.iconButton}
               >
@@ -158,7 +125,6 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-<<<<<<< HEAD
             {/* Forgot password */}
             <TouchableOpacity
               style={styles.forgotPassword}
@@ -168,16 +134,10 @@ export default function LoginScreen() {
                   'Please contact an administrator to reset your password.'
                 )
               }
-=======
-            <TouchableOpacity
-              style={styles.forgotPassword}
-              onPress={() => Alert.alert('Forgot password', 'Please contact an administrator to reset your password.')}
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
             >
               <Text style={styles.forgotText}>Forgot password?</Text>
             </TouchableOpacity>
 
-<<<<<<< HEAD
             {/* Login button */}
             <TouchableOpacity
               style={[styles.button, loading && { opacity: 0.7 }]}
@@ -189,10 +149,6 @@ export default function LoginScreen() {
               ) : (
                 <Text style={styles.buttonText}>Login</Text>
               )}
-=======
-            <TouchableOpacity style={[styles.button, loading && { opacity: 0.7 }]} onPress={handleLogin} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
             </TouchableOpacity>
           </View>
         </View>
@@ -205,7 +161,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scroll: { flexGrow: 1 },
   background: { flex: 1, position: 'relative', backgroundColor: '#fff' },
-<<<<<<< HEAD
   logo: {
     position: 'absolute',
     left: 0,
@@ -215,9 +170,6 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
     opacity: 0.9,
   },
-=======
-  logo: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, resizeMode: 'contain', opacity: 0.9 },
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
   container: {
     marginTop: 'auto',
     marginBottom: 100,
@@ -225,18 +177,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-<<<<<<< HEAD
-=======
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
     backgroundColor: 'rgba(255, 255, 255, 0.85)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -6 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 8,
-<<<<<<< HEAD
   },
   title: {
     fontSize: 28,
@@ -244,11 +190,8 @@ const styles = StyleSheet.create({
     color: '#1a1a1a',
     marginBottom: 24,
     textAlign: 'center',
-=======
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
   },
   input: {
-<<<<<<< HEAD
     backgroundColor: 'rgba(255,255,255,0.7)',
     paddingVertical: 12,
     paddingHorizontal: 16,
@@ -258,10 +201,6 @@ const styles = StyleSheet.create({
     borderColor: '#005288',
     fontSize: 16,
     color: '#333',
-=======
-    backgroundColor: 'rgba(255,255,255,0.7)', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10,
-    marginBottom: 16, borderWidth: 1, borderColor: '#005288', fontSize: 16, color: '#333',
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
   },
   inputRow: {
     position: 'relative',
@@ -279,10 +218,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-<<<<<<< HEAD
-=======
-  iconText: { fontSize: 18 },
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
   forgotPassword: {
     alignSelf: 'flex-end',
     marginTop: -8,
@@ -292,7 +227,6 @@ const styles = StyleSheet.create({
     color: '#005288',
     fontSize: 14,
     fontWeight: '600',
-<<<<<<< HEAD
   },
   button: {
     backgroundColor: '#005288',
@@ -308,9 +242,3 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
 });
-=======
-  },
-  button: { backgroundColor: '#005288', paddingVertical: 14, borderRadius: 10, marginTop: 20, alignItems: 'center' },
-  buttonText: { color: '#fff', fontSize: 18, fontWeight: '600', letterSpacing: 1 },
-});
->>>>>>> 25d1716bcb0d4f926ecd0234a11e3d7dcf9845a6
