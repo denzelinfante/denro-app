@@ -63,9 +63,7 @@ export default function DashboardScreen() {
         <TouchableOpacity onPress={() => router.push('/dashboard')}>
           <Text style={styles.navLink}>Dashboard</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/form')}>
-          <Text style={styles.navLink}>Form</Text>
-        </TouchableOpacity>
+       
         <TouchableOpacity onPress={handleLogout}>
           <Text style={styles.navLink}>Logout</Text>
         </TouchableOpacity>
@@ -106,13 +104,7 @@ export default function DashboardScreen() {
 
       {/* Bottom nav tiles */}
       <View style={styles.bottomNav}>
-        <TouchableOpacity
-          style={styles.navIcon}
-          onPress={() => router.push('/FormStartSubmission')}
-        >
-          <Entypo name="list" size={24} color="black" />
-          <Text>Template</Text>
-        </TouchableOpacity>
+        
 
         <TouchableOpacity
           style={[styles.navIcon, styles.activeIcon]}

@@ -55,7 +55,6 @@ export default function HomeScreen() {
       <View style={styles.navRow}>
         <TouchableOpacity onPress={() => router.push('/home')}><Text style={styles.navLink}>Home</Text></TouchableOpacity>
         <TouchableOpacity onPress={() => router.push('/dashboard')}><Text style={styles.navLink}>Dashboard</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/form')}><Text style={styles.navLink}>Form</Text></TouchableOpacity>
         <TouchableOpacity onPress={handleLogout}><Text style={styles.navLink}>Logout</Text></TouchableOpacity>
       </View>
 

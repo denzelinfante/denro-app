@@ -15,7 +15,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as MediaLibrary from 'expo-media-library';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase, STORAGE_BUCKET } from '../utils/supabase';
+import { supabase, STORAGE_BUCKET1 } from '../utils/supabase';
 import { SupabaseStorageService } from '../utils/supabaseStorageService';
 
 
@@ -105,15 +105,15 @@ async function testSupabaseConnection(): Promise<boolean> {
     console.log('✅ Storage accessible. Available buckets:', buckets?.map(b => b.name));
     
     // Test 2: Check if our bucket exists (just warn, don't fail)
-    const ourBucket = buckets?.find(b => b.id === STORAGE_BUCKET || b.name === STORAGE_BUCKET);
+    const ourBucket = buckets?.find(b => b.id === STORAGE_BUCKET1 || b.name === STORAGE_BUCKET1);
     if (!ourBucket) {
-      console.warn(`⚠️ Bucket "${STORAGE_BUCKET}" not found in list, will try upload anyway`);
+      console.warn(`⚠️ Bucket "${STORAGE_BUCKET1}" not found in list, will try upload anyway`);
       console.log('📦 Available bucket IDs:', buckets?.map(b => b.id));
       console.log('📦 Available bucket names:', buckets?.map(b => b.name));
-      console.log('🎯 Looking for:', STORAGE_BUCKET);
+      console.log('🎯 Looking for:', STORAGE_BUCKET1);
       // Don't return false - bucket exists in Supabase, just not showing in list
     } else {
-      console.log(`✅ Bucket "${STORAGE_BUCKET}" exists and is ${ourBucket.public ? 'public' : 'private'}`);
+      console.log(`✅ Bucket "${STORAGE_BUCKET1}" exists and is ${ourBucket.public ? 'public' : 'private'}`);
     }
     
     // Test 3: Database connectivity
@@ -215,9 +215,9 @@ export default function CameraScreen() {
 
   useEffect(() => {
     console.log('=== DEBUG INFO ===');
-    console.log('STORAGE_BUCKET constant:', STORAGE_BUCKET);
+    console.log('STORAGE_BUCKET1 constant:', STORAGE_BUCKET1);
     console.log('Expected:', 'geo-tagged-photos');
-    console.log('Match:', STORAGE_BUCKET === 'geo-tagged-photos');
+    console.log('Match:', STORAGE_BUCKET1 === 'geo-tagged-photos');
   }, []);
 
   useEffect(() => {
@@ -407,11 +407,11 @@ export default function CameraScreen() {
   // Use a transient client-side id for filenames only. Do NOT persist this as DB id.
   const transientId = Date.now();
   const fileName = `geocam_${transientId}_${Date.now()}.jpg`;
-  const filePath = `${STORAGE_BUCKET}/${fileName}`;
+  const filePath = `${STORAGE_BUCKET1}/${fileName}`;
 
       console.log('📸 Starting save process...');
       console.log('📂 File path:', filePath);
-      console.log('🪣 Bucket:', STORAGE_BUCKET);
+      console.log('🪣 Bucket:', STORAGE_BUCKET1);
 
       let publicImageUrl = '';
       let qrCodeData = '';
@@ -434,7 +434,7 @@ export default function CameraScreen() {
         // The bucket exists and policies are correct, so upload will work
         console.log('⬆️  Uploading to Supabase Storage (skipping pre-check)...');
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from(STORAGE_BUCKET)
+          .from(STORAGE_BUCKET1)
           .upload(filePath, blob, {
             contentType: 'image/jpeg',
             cacheControl: '3600',
@@ -454,7 +454,7 @@ export default function CameraScreen() {
 
         // Get the public URL
         const { data: urlData } = supabase.storage
-          .from(STORAGE_BUCKET)
+          .from(STORAGE_BUCKET1)
           .getPublicUrl(filePath);
 
         publicImageUrl = urlData.publicUrl;
