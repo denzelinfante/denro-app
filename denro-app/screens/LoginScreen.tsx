@@ -1,4 +1,3 @@
-// screens/LoginScreen.tsx
 import React, { useState } from 'react';
 import {
   View,
@@ -63,7 +62,6 @@ export default function LoginScreen() {
       setLoading(false);
     }
   };
-
   return (
     <KeyboardAvoidingView
       style={styles.flex}

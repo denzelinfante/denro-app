@@ -22,15 +22,7 @@ export default function SettingsMenu({
           <Text style={styles.itemText}>Edit Account</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.item} onPress={() => { onClose(); router.push("/reports-status"); }}>
-          <Ionicons name="checkbox-outline" size={18} color="#008B8B" />
-          <Text style={styles.itemText}>Report Status</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.item} onPress={() => { onClose(); router.push("/reports-submitted"); }}>
-          <Ionicons name="paper-plane-outline" size={18} color="#008B8B" />
-          <Text style={styles.itemText}>Submitted Reports</Text>
-        </TouchableOpacity>
+    
 
         <View style={styles.divider} />
 
