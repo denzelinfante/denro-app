@@ -50,6 +50,13 @@ export default function LoginScreen() {
         return;
       }
 
+      // ✅ Check if user role is allowed
+      const allowedRoles = ['ADMIN', 'PENRO', 'CENRO'];
+      if (!allowedRoles.includes(row.role?.toUpperCase() || '')) {
+        Alert.alert('Access Denied', 'Only ADMIN, PENRO, and CENRO users can log in.');
+        return;
+      }
+
       // ✅ Save user to session (local storage)
       await saveUser(row);
 

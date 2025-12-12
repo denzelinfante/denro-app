@@ -68,7 +68,7 @@ export default function HomeScreen() {
       {/* Bottom nav */}
       <View style={styles.bottomNav}>
         <TouchableOpacity style={styles.navIcon} onPress={() => router.push('/Enumerators/EnumeratorsReport')}><Entypo name="list" size={24} color="black" /><Text>Template</Text></TouchableOpacity>
-        <TouchableOpacity style={[styles.navIcon, styles.activeIcon]} onPress={() => router.push('/camera')}><Ionicons name="camera" size={24} color="black" /><Text>Camera</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.navIcon, styles.activeIcon]} onPress={() => router.push('/CameraScreen')}><Ionicons name="camera" size={24} color="black" /><Text>Camera</Text></TouchableOpacity>
         <TouchableOpacity style={styles.navIcon} onPress={() => router.push('/MyReportsScreen')}><FontAwesome name="image" size={24} color="black" /><Text>Collection</Text></TouchableOpacity>
       </View>
 
