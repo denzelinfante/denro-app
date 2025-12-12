@@ -283,7 +283,7 @@ export default function CollectionScreen() {
       {/* Bottom nav */}
       <View style={styles.bottomNav}>
         
-        <TouchableOpacity style={styles.navBtn} onPress={() => router.push('/camera')}>
+        <TouchableOpacity style={styles.navBtn} onPress={() => router.push('/CameraScreen')}>
           <Text style={styles.navText}>Camera</Text>
         </TouchableOpacity>
         <TouchableOpacity style={[styles.navBtn, styles.navActive]} onPress={() => router.push('/CollectionScreen')}>

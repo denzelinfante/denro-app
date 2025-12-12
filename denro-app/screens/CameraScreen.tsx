@@ -409,206 +409,43 @@ export default function CameraScreen() {
   const fileName = `geocam_${transientId}_${Date.now()}.jpg`;
   const filePath = `${STORAGE_BUCKET1}/${fileName}`;
 
-      console.log('📸 Starting save process...');
-      console.log('📂 File path:', filePath);
-      console.log('🪣 Bucket:', STORAGE_BUCKET1);
+      console.log('📸 Saving image locally (will upload when report is submitted)...');
 
-      let publicImageUrl = '';
-      let qrCodeData = '';
-      let uploadSuccess = false;
-      let storageMethod = 'local';
+      // Save locally only - no Supabase upload yet
+      const localImageUrl = pendingUri;
+      const tempId = transientId; // Use timestamp as temporary ID
 
-      // Try cloud upload with detailed error handling
-      try {
-        console.log('🔄 Converting image to blob...');
-        const response = await fetch(pendingUri);
-        
-        if (!response.ok) {
-          throw new Error(`Fetch failed: ${response.status} ${response.statusText}`);
-        }
-        
-        const blob = await response.blob();
-        console.log('✅ Blob created:', blob.size, 'bytes, type:', blob.type);
-
-        // Skip connection test - just try direct upload
-        // The bucket exists and policies are correct, so upload will work
-        console.log('⬆️  Uploading to Supabase Storage (skipping pre-check)...');
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from(STORAGE_BUCKET1)
-          .upload(filePath, blob, {
-            contentType: 'image/jpeg',
-            cacheControl: '3600',
-            upsert: false,
-          });
-
-        if (uploadError) {
-          console.error('❌ Upload error:', {
-            message: uploadError.message,
-            name: uploadError.name,
-            stack: uploadError.stack,
-          });
-          throw uploadError;
-        }
-
-        console.log('✅ Upload successful!', uploadData);
-
-        // Get the public URL
-        const { data: urlData } = supabase.storage
-          .from(STORAGE_BUCKET1)
-          .getPublicUrl(filePath);
-
-        publicImageUrl = urlData.publicUrl;
-        qrCodeData = publicImageUrl;
-        uploadSuccess = true;
-        storageMethod = 'cloud';
-
-        console.log('🌐 Public URL:', publicImageUrl);
-
-      } catch (uploadError: any) {
-        console.error('❌ Cloud upload failed:', uploadError);
-        console.error('Error details:', {
-          message: uploadError?.message,
-          name: uploadError?.name,
-          cause: uploadError?.cause,
-        });
-        
-  // Fallback: Use local storage. Generate a unique QR string by appending imageId so DB unique constraint won't conflict.
-  publicImageUrl = pendingUri;
-  qrCodeData = `https://www.google.com/maps?q=${latFixed},${lonFixed}&t=satellite&z=18&img=${transientId}`;
-        uploadSuccess = false;
-        storageMethod = 'local';
-        
-        console.log(publicImageUrl)
-        console.log('📍 Using fallback - Google Maps QR:', qrCodeData);
-      }
-
-      // If we only have a local path (fallback) ensure we upload the actual image bytes
-      // to the Supabase bucket before saving DB entries. This prevents storing local phone paths.
-      if (!uploadSuccess && publicImageUrl && (publicImageUrl.startsWith('file://') || publicImageUrl.includes('/cache/ExperienceData/'))) {
-        try {
-          console.log('ℹ️ Uploading actual image bytes from local path to Supabase before DB save:', publicImageUrl);
-          const fallbackDest = `${enumeratorId}/geocam_${transientId}_from_local.jpg`;
-          const saved = await SupabaseStorageService.saveFile(publicImageUrl, fallbackDest, 'geo-tagged-photos');
-          console.log('✅ Uploaded local image to Supabase:', saved);
-          // update variables to reflect cloud-stored image
-          publicImageUrl = saved.publicUrl || publicImageUrl;
-          storageMethod = 'cloud';
-          uploadSuccess = true;
-          // Use the saved path as storage_path
-          // Note: stripExpoCameraCachePrefix will be applied when inserting
-          // but we keep the full saved.path for DB storage
-          // overwrite filePath for consistency
-          // (filePath variable was previously used for initial upload)
-          // set filePath to the saved path so DB gets correct remote path
-          // saved.path is the destinationPath
-          // (no change to filePath variable itself to avoid scope confusion)
-          console.log('🌐 New publicImageUrl after uploading local bytes:', publicImageUrl);
-        } catch (localUploadErr) {
-          console.error('❌ Failed to upload local image bytes to Supabase:', localUploadErr);
-          Alert.alert('Upload failed', 'Could not upload the image to cloud storage. Please check your connection and try again.');
-          return;
-        }
-      }
-
-      // Check for duplicates in DB by exact storage_path or by generated QR
-      console.log('🔎 Checking for duplicate in database...');
-      const storagePathToCheck = stripExpoCameraCachePrefix(uploadSuccess ? filePath : pendingUri) || null;
-      const { data: dupCheck, error: dupErr } = await supabase
-        .from('geo_tagged_images')
-        .select('id')
-        .or(storagePathToCheck ? `storage_path.eq.${storagePathToCheck},qr_code.eq.${qrCodeData}` : `qr_code.eq.${qrCodeData}`)
-        .limit(1)
-        .single();
-
-      if (dupErr && dupErr.code !== 'PGRST116') {
-        // PGRST116 is PostgREST "No rows" for single() - ignore
-        console.warn('Duplicate check returned error (non-fatal):', dupErr);
-      }
-
-      if (dupCheck && dupCheck.id) {
-        console.log('⚠️ Duplicate image detected in DB, skipping insert. ID:', dupCheck.id);
-        // Use the existing id for local storage representation
-        const existingId = dupCheck.id;
-        const rec: PhotoRecord = {
-          id: existingId,
-          uri: stripExpoCameraCachePrefix(publicImageUrl) as string,
-          lat: isFinite(latFixed) ? latFixed : 0,
-          lon: isFinite(lonFixed) ? lonFixed : 0,
-          acc,
-          createdAt: new Date().toISOString(),
-          sessionId: sid,
-        };
-        await addPhotoToDB(rec);
-        setLastPhotoUri(stripExpoCameraCachePrefix(publicImageUrl) || null);
-        setPendingUri(null);
-        setIsSaving(false);
-        Alert.alert('Notice', 'This image was already saved previously.');
-        return;
-      }
-
-      // Save to database - do NOT set id client-side, let DB assign it
-      console.log('💾 Saving to database...');
-      const { data: imageData, error: imageError } = await supabase
-        .from("geo_tagged_images")
-        .insert([{
-          image: stripExpoCameraCachePrefix(publicImageUrl),
-          qr_code: qrCodeData,
-          latitude: isFinite(latFixed) ? latFixed : null,
-          longitude: isFinite(lonFixed) ? lonFixed : null,
-          location: locationAddress || null,
-          captured_by: enumeratorId,
-          captured_at: new Date().toISOString(),
-          storage_path: storagePathToCheck,
-          is_primary: !multiMode,
-          photo_sequence: multiMode ? sessionCount + 1 : 1,
-          notes: `Storage: ${storageMethod}`,
-        }])
-        .select('id')
-        .single();
-
-      if (imageError) {
-        console.error('❌ Database save error:', imageError);
-        Alert.alert('Error', 'Failed to save image to database. Please try again.');
-        setIsSaving(false);
-        return;
-      }
-
-      console.log('✅ Database save successful! Image ID:', imageData.id);
-
-      // Update local storage
+      // Store image metadata locally
       const rec: PhotoRecord = {
-        id: imageData.id,
-        uri: stripExpoCameraCachePrefix(publicImageUrl) as string,
+        id: tempId,
+        uri: localImageUrl,
         lat: isFinite(latFixed) ? latFixed : 0,
         lon: isFinite(lonFixed) ? lonFixed : 0,
         acc,
         createdAt: new Date().toISOString(),
         sessionId: sid,
       };
-  await addPhotoToDB(rec);
+      await addPhotoToDB(rec);
 
-  setLastPhotoUri(stripExpoCameraCachePrefix(publicImageUrl) || null);
-  setPendingUri(null);
-  setIsSaving(false);
+      setLastPhotoUri(localImageUrl);
+      setPendingUri(null);
+      setIsSaving(false);
 
-      // Show appropriate success message
-      if (uploadSuccess) {
-        Alert.alert('✅ Success!', 'Image uploaded to cloud storage successfully!');
-      } else {
-        Alert.alert('💾 Saved Locally', 'Image saved locally. Will upload when connection is restored.');
-      }
+      Alert.alert('✅ Photo Saved', 'Image saved locally. Will be uploaded when report is submitted.');
+
 
       if (multiMode) {
         setSessionCount((n) => n + 1);
       } else {
         if (params.returnTo && params.captureCoordinates === 'true') {
           await AsyncStorage.setItem(CAMERA_RETURN_DATA_KEY, JSON.stringify({
-            primaryGeoImageId: imageData.id.toString(),
+            primaryGeoImageId: tempId.toString(),
             latitude: latFixed.toString(),
             longitude: lonFixed.toString(),
             location: locationAddress,
             totalImages: '1',
-            imageIds: imageData.id.toString(),
+            imageIds: tempId.toString(),
+            imageUris: localImageUrl,
             timestamp: Date.now(),
           }));
           
@@ -646,6 +483,7 @@ export default function CameraScreen() {
               location: locationAddress,
               totalImages: sessionPhotos.length.toString(),
               imageIds: imageIds,
+              imageUris: sessionPhotos.map(p => p.uri).join(','),
               timestamp: Date.now(),
             }));
             

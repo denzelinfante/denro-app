@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { View, ActivityIndicator, Text, Alert } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as FileSystem from 'expo-file-system';
 import { supabase } from "../../utils/supabase";
 
 import EnumRep1 from "./EnumRep1";
@@ -96,6 +97,7 @@ interface FormData {
   informantName: string;
   informantSignature: string;
   informantDate: string;
+  informantRefusalReason: string;
   
   // General notes
   reportNotes: string;
@@ -192,6 +194,7 @@ export default function EnumeratorsReport() {
     informantName: "",
     informantSignature: "",
     informantDate: "",
+    informantRefusalReason: "",
     reportNotes: "",
   });
 
@@ -271,21 +274,15 @@ export default function EnumeratorsReport() {
             coordinateSource: "camera",
           }));
           
-          // Clear the camera return data
-          await AsyncStorage.removeItem("camera_return_data");
+          // Don't clear camera_return_data here - we need it for upload during save
         }
       } catch (error) {
         console.error("Error checking camera return data:", error);
       }
     };
 
-    // Check immediately when component mounts or updates
+    // Check only once when component mounts
     checkCameraReturnData();
-    
-    // Set up an interval to check periodically (in case of race conditions)
-    const interval = setInterval(checkCameraReturnData, 500);
-    
-    return () => clearInterval(interval);
   }, []);
 
   const loadProtectedAreas = async () => {
@@ -331,7 +328,7 @@ export default function EnumeratorsReport() {
   };
 
   // Database operations - single establishment_profile table
-  const createEstablishmentProfile = async () => {
+  const createEstablishmentProfile = async (imageId?: number) => {
     // Get selected establishment types
     const selectedTypes = Object.keys(formData.establishmentTypes)
       .filter(type => formData.establishmentTypes[type]);
@@ -346,7 +343,7 @@ export default function EnumeratorsReport() {
       .from("establishment_profile")
       .insert([{
         establishment_name: formData.proponentName,
-        geo_tagged_image_id: formData.primaryGeoImageId,
+        geo_tagged_image_id: imageId || formData.primaryGeoImageId,
         
         // Lot/Land info
         lot_status: formData.lotStatus || null,
@@ -451,8 +448,98 @@ export default function EnumeratorsReport() {
         allImageIds: formData.allImageIds
       });
 
-      // Create establishment profile
-      const establishmentId = await createEstablishmentProfile();
+      // Upload images to Supabase first
+      let uploadedImageIds: number[] = [];
+      const cameraDataStr = await AsyncStorage.getItem('camera_return_data');
+      
+      console.log('Camera data string:', cameraDataStr);
+      
+      if (cameraDataStr) {
+        const cameraData = JSON.parse(cameraDataStr);
+        const imageUris = cameraData.imageUris ? cameraData.imageUris.split(',') : [];
+        
+        console.log('Camera data:', cameraData);
+        console.log('Image URIs:', imageUris);
+        console.log('⬆️ Uploading', imageUris.length, 'images to Supabase...');
+        
+        for (const imageUri of imageUris) {
+          try {
+            const timestamp = Date.now();
+            const fileName = `geocam_${timestamp}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+            const filePath = `${enumeratorId}/${fileName}`;
+            
+            // Read file as ArrayBuffer for React Native
+            const fileInfo = await FileSystem.getInfoAsync(imageUri);
+            if (!fileInfo.exists) {
+              throw new Error('Image file not found');
+            }
+            
+            // Use fetch to get the file as ArrayBuffer
+            const response = await fetch(imageUri);
+            const arrayBuffer = await response.arrayBuffer();
+            
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('geo-tagged-photos')
+              .upload(filePath, arrayBuffer, {
+                contentType: 'image/jpeg',
+                cacheControl: '3600',
+                upsert: false,
+              });
+
+            if (uploadError) throw uploadError;
+
+            // Get public URL
+            const { data: urlData } = supabase.storage
+              .from('geo-tagged-photos')
+              .getPublicUrl(filePath);
+
+            // Save to geo_tagged_images table
+            const { data: imageData, error: imageError } = await supabase
+              .from('geo_tagged_images')
+              .insert([{
+                image: urlData.publicUrl,
+                qr_code: urlData.publicUrl,
+                latitude: parseFloat(formData.latitude) || null,
+                longitude: parseFloat(formData.longitude) || null,
+                location: formData.location || null,
+                captured_by: enumeratorId,
+                captured_at: new Date().toISOString(),
+                storage_path: filePath,
+                is_primary: uploadedImageIds.length === 0,
+                photo_sequence: uploadedImageIds.length + 1,
+                notes: 'Uploaded from report submission',
+              }])
+              .select('id')
+              .single();
+
+            if (imageError) throw imageError;
+            
+            uploadedImageIds.push(imageData.id);
+            console.log('✅ Uploaded image', uploadedImageIds.length, '- ID:', imageData.id);
+          } catch (uploadErr) {
+            console.error('❌ Failed to upload image:', uploadErr);
+            Alert.alert('Upload Error', 'Failed to upload one or more images. Please try again.');
+            setSaving(false);
+            return;
+          }
+        }
+        
+        console.log('✅ All images uploaded successfully');
+      } else {
+        Alert.alert('Error', 'No images found. Please capture photos first.');
+        setSaving(false);
+        return;
+      }
+
+      // Verify we have uploaded image IDs
+      if (!uploadedImageIds || uploadedImageIds.length === 0) {
+        Alert.alert('Error', 'Failed to upload images. Please try again.');
+        setSaving(false);
+        return;
+      }
+
+      // Create establishment profile with uploaded image ID
+      const establishmentId = await createEstablishmentProfile(uploadedImageIds[0]);
 
       // Handle proponent - create new or update existing
       let proponentId = formData.proponentId;
@@ -501,7 +588,7 @@ export default function EnumeratorsReport() {
         .eq("id", formData.paId)
         .single();
 
-      // Validate informant date - only save if it's a valid date format
+      // Validate informant date
       const isValidDate = (dateString: string): boolean => {
         if (!dateString || !dateString.trim()) return false;
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
@@ -514,10 +601,10 @@ export default function EnumeratorsReport() {
         ? formData.informantDate 
         : null;
 
-      // Store the reason in remarks if not a valid date
+      // Store the refusal reason in remarks if provided
       let remarksText = formData.reportNotes || '';
-      if (formData.informantDate && !isValidDate(formData.informantDate)) {
-        remarksText = `Informant signature note: ${formData.informantDate}\n\n${remarksText}`.trim();
+      if (formData.informantRefusalReason && formData.informantRefusalReason.trim()) {
+        remarksText = `Informant signature refusal reason: ${formData.informantRefusalReason}\n\n${remarksText}`.trim();
       }
 
       console.log('About to insert enumerators_report with:', {
@@ -534,7 +621,7 @@ export default function EnumeratorsReport() {
           establishment_id: establishmentId,
           proponent_id: proponentId,
           pa_id: formData.paId,
-          geo_tagged_image_id: formData.primaryGeoImageId,
+          geo_tagged_image_id: uploadedImageIds[0],
           report_date: new Date().toISOString().split('T')[0],
           enumerator_id: enumeratorId,
           enumerator_signature_date: new Date().toISOString().split('T')[0],
@@ -555,14 +642,14 @@ export default function EnumeratorsReport() {
       if (reportError) throw reportError;
 
       // Save all captured images to the linking table
-      if (formData.allImageIds && formData.allImageIds.length > 0) {
-        console.log('Saving all images to report:', formData.allImageIds);
+      if (uploadedImageIds && uploadedImageIds.length > 0) {
+        console.log('Saving all images to report:', uploadedImageIds);
         
-        const reportImages = formData.allImageIds.map((imageId, index) => ({
+        const reportImages = uploadedImageIds.map((imageId, index) => ({
           report_id: reportData.id,
           report_type: 'enumerator',
           image_id: imageId,
-          is_primary: imageId === formData.primaryGeoImageId,
+          is_primary: imageId === uploadedImageIds[0],
           image_sequence: index + 1,
         }));
 
@@ -578,13 +665,16 @@ export default function EnumeratorsReport() {
             "Report saved but some images may not be linked. Please contact support if images are missing."
           );
         } else {
-          console.log(`Successfully linked ${formData.allImageIds.length} images to report`);
+          console.log(`Successfully linked ${uploadedImageIds.length} images to report`);
         }
       }
 
+      // Clear the camera return data after successful save
+      await AsyncStorage.removeItem('camera_return_data');
+      
       Alert.alert(
         "Success",
-        `Enumerator report saved successfully with ${formData.allImageIds.length} image${formData.allImageIds.length !== 1 ? 's' : ''}`,
+        `Enumerator report saved successfully with ${uploadedImageIds.length} image${uploadedImageIds.length !== 1 ? 's' : ''}`,
         [{ text: "OK", onPress: () => router.replace("/MyReportsScreen") }]
       );
     } catch (error) {

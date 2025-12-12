@@ -108,7 +108,7 @@ export default function DashboardScreen() {
 
         <TouchableOpacity
           style={[styles.navIcon, styles.activeIcon]}
-          onPress={() => router.push('/camera')}
+          onPress={() => router.push('/CameraScreen')}
           accessibilityLabel="Open camera"
         >
           <Ionicons name="camera" size={24} color="black" />

@@ -22,4 +22,4 @@
   });
 
   export const STORAGE_BUCKET = "denro_app";
-   export const STORAGE_BUCKET1 = "geo-tagged-photos";
+  export const STORAGE_BUCKET1 = "geo-tagged-photos";

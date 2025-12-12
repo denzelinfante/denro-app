@@ -60,6 +60,7 @@ interface FormData {
   informantName: string;
   informantSignature: string;
   informantDate: string;
+  informantRefusalReason: string;
   reportNotes: string;
   [key: string]: any;
 }
@@ -187,19 +188,49 @@ export default function EnumRep3({
   const [showInformantSignature, setShowInformantSignature] = useState(false);
 
   const updateLguPermit = (field: keyof LguPermits, value: any) => {
+    const today = new Date().toISOString().split('T')[0];
+    const updates: Partial<LguPermits> = { [field]: value };
+    
+    // Auto-fill date issued when permit is checked
+    if (field === 'mayorsPermit' && value && !formData.lguPermits.mpDateIssued) {
+      updates.mpDateIssued = today;
+    } else if (field === 'businessPermit' && value && !formData.lguPermits.bpDateIssued) {
+      updates.bpDateIssued = today;
+    } else if (field === 'buildingPermit' && value && !formData.lguPermits.bldgDateIssued) {
+      updates.bldgDateIssued = today;
+    }
+    
     updateFormData({
       lguPermits: {
         ...formData.lguPermits,
-        [field]: value,
+        ...updates,
       },
     });
   };
 
   const updateDenrPermit = (field: keyof DenrPermits, value: any) => {
+    const today = new Date().toISOString().split('T')[0];
+    const updates: Partial<DenrPermits> = { [field]: value };
+    
+    // Auto-fill date issued when permit is checked
+    if (field === 'pambResolution' && value && !formData.denrPermits.pambDateIssued) {
+      updates.pambDateIssued = today;
+    } else if (field === 'sapa' && value && !formData.denrPermits.sapaDateIssued) {
+      updates.sapaDateIssued = today;
+    } else if (field === 'pacbrma' && value && !formData.denrPermits.pacbrmaDateIssued) {
+      updates.pacbrmaDateIssued = today;
+    } else if (field === 'ecc' && value && !formData.denrPermits.eccDateIssued) {
+      updates.eccDateIssued = today;
+    } else if (field === 'dischargePermit' && value && !formData.denrPermits.dpDateIssued) {
+      updates.dpDateIssued = today;
+    } else if (field === 'permitToOperate' && value && !formData.denrPermits.ptoDateIssued) {
+      updates.ptoDateIssued = today;
+    }
+    
     updateFormData({
       denrPermits: {
         ...formData.denrPermits,
-        [field]: value,
+        ...updates,
       },
     });
   };
@@ -209,7 +240,11 @@ export default function EnumRep3({
   };
 
   const handleInformantSignature = (signature: string) => {
-    updateFormData({ informantSignature: signature });
+    const today = new Date().toISOString().split('T')[0];
+    updateFormData({ 
+      informantSignature: signature,
+      informantDate: today
+    });
   };
 
   return (
@@ -465,11 +500,33 @@ export default function EnumRep3({
             )}
           </Field>
           
-          <Field label="Date or Reason if refused">
+          <Field label="Date">
+            <View
+              style={{
+                borderWidth: 1,
+                borderColor: "#cbd5e1",
+                backgroundColor: "#f8fafc",
+                borderRadius: 10,
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+              }}
+            >
+              <Text style={{ color: "#0f172a" }}>
+                {formData.informantDate || "Will be set when signature is captured"}
+              </Text>
+            </View>
+            <Text style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+              Auto-filled when informant signs
+            </Text>
+          </Field>
+
+          <Field label="Reason for Refusal (if applicable)">
             <Input 
-              value={formData.informantDate}
-              onChangeText={(value) => updateFormData({ informantDate: value })}
-              placeholder="YYYY-MM-DD or reason if refused to sign"
+              value={formData.informantRefusalReason}
+              onChangeText={(value) => updateFormData({ informantRefusalReason: value })}
+              multiline
+              style={{ height: 60 }}
+              placeholder="Enter reason if informant refused to sign..."
             />
           </Field>
         </Section>

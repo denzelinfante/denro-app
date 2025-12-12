@@ -22,7 +22,7 @@ export default function SettingsMenu({
           <Text style={styles.itemText}>Edit Account</Text>
         </TouchableOpacity>
 
-    
+        
 
         <View style={styles.divider} />
 
