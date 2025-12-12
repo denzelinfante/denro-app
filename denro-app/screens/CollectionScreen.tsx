@@ -176,7 +176,7 @@ export default function CollectionScreen() {
           <View style={styles.linksRow}>
             <TouchableOpacity onPress={() => router.push('/home')}><Text style={styles.link}>Home</Text></TouchableOpacity>
             <TouchableOpacity onPress={() => router.push('/dashboard')}><Text style={styles.link}>Dashboard</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push('/form')}><Text style={styles.link}>Form</Text></TouchableOpacity>
+            
             <TouchableOpacity onPress={() => router.replace('/login')}><Text style={styles.link}>Logout</Text></TouchableOpacity>
           </View>
         </View>
@@ -282,9 +282,7 @@ export default function CollectionScreen() {
 
       {/* Bottom nav */}
       <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navBtn} onPress={() => router.push('/FormStartSubmission')}>
-          <Text style={styles.navText}>Template</Text>
-        </TouchableOpacity>
+        
         <TouchableOpacity style={styles.navBtn} onPress={() => router.push('/camera')}>
           <Text style={styles.navText}>Camera</Text>
         </TouchableOpacity>
