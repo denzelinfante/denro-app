@@ -54,7 +54,7 @@ export default function HomeScreen() {
       {/* Top nav */}
       <View style={styles.navRow}>
         <TouchableOpacity onPress={() => router.push('/home')}><Text style={styles.navLink}>Home</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/dashboard')}><Text style={styles.navLink}>Dashboard</Text></TouchableOpacity>S
+        <TouchableOpacity onPress={() => router.push('/dashboard')}><Text style={styles.navLink}>Dashboard</Text></TouchableOpacity>
         <TouchableOpacity onPress={handleLogout}><Text style={styles.navLink}>Logout</Text></TouchableOpacity>
       </View>
 
