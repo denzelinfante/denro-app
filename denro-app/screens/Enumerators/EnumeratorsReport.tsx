@@ -256,12 +256,15 @@ export default function EnumeratorsReport() {
           const cameraData = JSON.parse(cameraDataStr);
           console.log("Found camera return data:", cameraData);
           
-          // Process the camera data
+          // Process the camera data - use ONLY the imageIds from camera return data
           const parsedPrimaryId = parseInt(cameraData.primaryGeoImageId);
           const allIds = cameraData.imageIds
             .split(',')
             .map((id: string) => parseInt(id.trim()))
             .filter((id: number) => !isNaN(id));
+          
+          console.log('Parsed image IDs from camera data:', allIds);
+          console.log('Total images to upload:', allIds.length);
           
           // Update form data with camera data
           setFormData(prev => ({
@@ -456,10 +459,11 @@ export default function EnumeratorsReport() {
       
       if (cameraDataStr) {
         const cameraData = JSON.parse(cameraDataStr);
+        // Use ONLY the imageUris from camera return data - this is the authoritative source
         const imageUris = cameraData.imageUris ? cameraData.imageUris.split(',') : [];
         
         console.log('Camera data:', cameraData);
-        console.log('Image URIs:', imageUris);
+        console.log('Image URIs to upload:', imageUris);
         console.log('⬆️ Uploading', imageUris.length, 'images to Supabase...');
         
         for (const imageUri of imageUris) {

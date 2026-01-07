@@ -328,8 +328,11 @@ export default function CameraScreen() {
   const toggleMultiMode = (val: boolean) => {
     setMultiMode(val);
     if (val && !sessionId) {
-      setSessionId(String(Date.now()));
+      // Generate a unique session ID with timestamp and random component
+      const uniqueSessionId = `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      setSessionId(uniqueSessionId);
       setSessionCount(0);
+      console.log('Started new multi-mode session:', uniqueSessionId);
     }
     if (!val) {
       setSessionId(null);
@@ -401,7 +404,7 @@ export default function CameraScreen() {
         return;
       }
 
-      const sid = multiMode ? (sessionId ?? String(Date.now())) : `single-${Date.now()}`;
+      const sid = multiMode ? (sessionId ?? String(Date.now())) : `single-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       if (multiMode && !sessionId) setSessionId(sid);
 
   // Use a transient client-side id for filenames only. Do NOT persist this as DB id.
@@ -438,11 +441,17 @@ export default function CameraScreen() {
         setSessionCount((n) => n + 1);
       } else {
         if (params.returnTo && params.captureCoordinates === 'true') {
+          // Refresh location if not set
+          let finalLocation = locationAddress;
+          if (!finalLocation && !isNaN(latFixed) && !isNaN(lonFixed)) {
+            finalLocation = await reverseGeocode(latFixed, lonFixed) || '';
+          }
+          
           await AsyncStorage.setItem(CAMERA_RETURN_DATA_KEY, JSON.stringify({
             primaryGeoImageId: tempId.toString(),
             latitude: latFixed.toString(),
             longitude: lonFixed.toString(),
-            location: locationAddress,
+            location: finalLocation,
             totalImages: '1',
             imageIds: tempId.toString(),
             imageUris: localImageUrl,
@@ -470,22 +479,45 @@ export default function CameraScreen() {
         try {
           const raw = await AsyncStorage.getItem(PHOTOS_KEY);
           const allPhotos: PhotoRecord[] = raw ? JSON.parse(raw) : [];
+          // Only get photos from THIS session by checking sessionId AND ensuring they were captured recently
           const sessionPhotos = allPhotos.filter(p => p.sessionId === sessionId);
           
+          console.log('Session ID:', sessionId);
+          console.log('Total photos in storage:', allPhotos.length);
+          console.log('Photos matching session:', sessionPhotos.length);
+          
           if (sessionPhotos.length > 0) {
+            // Get fresh location data
+            const useLat = (locked?.lat ?? lat).replace('—', '');
+            const useLon = (locked?.lon ?? lon).replace('—', '');
+            const latNum = Number(useLat);
+            const lonNum = Number(useLon);
+            const latFixed = Number(formatCoord(latNum, 6));
+            const lonFixed = Number(formatCoord(lonNum, 6));
+            
+            // Refresh location address if not set
+            let finalLocation = locationAddress;
+            if (!finalLocation && !isNaN(latFixed) && !isNaN(lonFixed)) {
+              finalLocation = await reverseGeocode(latFixed, lonFixed) || '';
+            }
+            
             const primaryPhoto = sessionPhotos[0];
             const imageIds = sessionPhotos.map(p => p.id).join(',');
             
+            // Store session data with unique session identifier
             await AsyncStorage.setItem(CAMERA_RETURN_DATA_KEY, JSON.stringify({
               primaryGeoImageId: primaryPhoto.id.toString(),
-              latitude: primaryPhoto.lat.toString(),
-              longitude: primaryPhoto.lon.toString(),
-              location: locationAddress,
+              latitude: latFixed.toString(),
+              longitude: lonFixed.toString(),
+              location: finalLocation,
               totalImages: sessionPhotos.length.toString(),
               imageIds: imageIds,
               imageUris: sessionPhotos.map(p => p.uri).join(','),
+              sessionId: sessionId, // Include sessionId for verification
               timestamp: Date.now(),
             }));
+            
+            console.log('Saved camera return data with', sessionPhotos.length, 'images');
             
             router.back();
           } else {
