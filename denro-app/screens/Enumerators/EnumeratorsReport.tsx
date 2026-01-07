@@ -428,6 +428,7 @@ export default function EnumeratorsReport() {
         informantName: report.informant_name || '',
         informantSignature: report.informant_signature || '',
         informantDate: report.informant_signature_date || '',
+        informantRefusalReason: '',
         reportNotes: report.remarks || '',
       });
     } catch (error) {
