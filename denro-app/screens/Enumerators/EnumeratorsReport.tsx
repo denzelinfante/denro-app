@@ -110,6 +110,7 @@ export default function EnumeratorsReport() {
     location?: string;
     totalImages?: string;
     imageIds?: string;
+    editId?: string;
   }>();
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -206,6 +207,11 @@ export default function EnumeratorsReport() {
         const enumId = await getEnumeratorId();
         setEnumeratorId(enumId);
         
+        // Check if editing existing report
+        if (params.editId) {
+          await loadExistingReport(parseInt(params.editId));
+        }
+        
         // Load enumerator name immediately after getting ID
         if (enumId) {
           try {
@@ -246,12 +252,20 @@ export default function EnumeratorsReport() {
 
   // Check for camera return data when screen comes into focus
   useEffect(() => {
+    let isProcessing = false;
+    
     const checkCameraReturnData = async () => {
+      if (isProcessing) return;
+      
       try {
         const cameraDataStr = await AsyncStorage.getItem("camera_return_data");
         if (cameraDataStr) {
+          isProcessing = true;
           const cameraData = JSON.parse(cameraDataStr);
           console.log("Found camera return data:", cameraData);
+          
+          // Clear immediately to prevent duplicate processing
+          await AsyncStorage.removeItem("camera_return_data");
           
           // Process the camera data
           const parsedPrimaryId = parseInt(cameraData.primaryGeoImageId);
@@ -270,19 +284,15 @@ export default function EnumeratorsReport() {
             allImageIds: allIds,
             coordinateSource: "camera",
           }));
-          
-          // Clear the camera return data
-          await AsyncStorage.removeItem("camera_return_data");
         }
       } catch (error) {
         console.error("Error checking camera return data:", error);
+      } finally {
+        isProcessing = false;
       }
     };
 
-    // Check immediately when component mounts or updates
     checkCameraReturnData();
-    
-    // Set up an interval to check periodically (in case of race conditions)
     const interval = setInterval(checkCameraReturnData, 500);
     
     return () => clearInterval(interval);
@@ -297,6 +307,126 @@ export default function EnumeratorsReport() {
     if (error) throw error;
     if (data) {
       setPaItems(data.map(pa => ({ label: pa.name, value: pa.id })));
+    }
+  };
+
+  const loadExistingReport = async (reportId: number) => {
+    try {
+      const { data: report, error } = await supabase
+        .from("enumerators_report")
+        .select(`
+          *,
+          establishment_profile(*),
+          proponents(*),
+          geo_tagged_images(latitude, longitude, location)
+        `)
+        .eq("id", reportId)
+        .single();
+
+      if (error) throw error;
+      if (!report) return;
+
+      const establishment = report.establishment_profile as any;
+      const proponent = report.proponents as any;
+      const geoImage = report.geo_tagged_images as any;
+
+      // Load images
+      const { data: images } = await supabase
+        .from("reported_images")
+        .select("image_id, is_primary, image_sequence")
+        .eq("report_id", reportId)
+        .eq("report_type", "enumerator")
+        .order("image_sequence");
+
+      const imageIds = images?.map(img => img.image_id) || [];
+      const primaryImage = images?.find(img => img.is_primary);
+
+      // Parse establishment types
+      const types = establishment?.establishment_type?.split(',').map((t: string) => t.trim()) || [];
+      const establishmentTypes: Record<string, boolean> = {};
+      let establishmentOther = '';
+      
+      types.forEach((type: string) => {
+        if (['Resort', 'Restaurant', 'Store', 'Residential', 'Others'].includes(type)) {
+          establishmentTypes[type] = true;
+        } else {
+          establishmentTypes['Others'] = true;
+          establishmentOther = type;
+        }
+      });
+
+      setFormData({
+        paId: report.pa_id,
+        proponentId: proponent?.id || null,
+        proponentName: proponent?.name || '',
+        proponentContact: proponent?.contact_number || '',
+        proponentEmail: '',
+        proponentAddress: '',
+        location: geoImage?.location || '',
+        lotStatus: establishment?.lot_status || '',
+        taxDeclarationNo: establishment?.tax_declaration_no || '',
+        landClassification: establishment?.land_classification || '',
+        titleNo: establishment?.title_no || '',
+        lotNo: establishment?.lot_no || '',
+        lotOwner: establishment?.lot_owner || '',
+        areaCovered: establishment?.area_covered || '',
+        managementZone: establishment?.pa_zone || '',
+        withinEasement: establishment?.within_easement || false,
+        lotNotes: '',
+        establishmentStatus: establishment?.establishment_status || '',
+        establishmentTypes,
+        establishmentOther,
+        establishmentNotes: establishment?.description || '',
+        latitude: geoImage?.latitude?.toString() || '',
+        longitude: geoImage?.longitude?.toString() || '',
+        coordinateSource: 'camera',
+        primaryGeoImageId: primaryImage?.image_id || report.geo_tagged_image_id || null,
+        allImageIds: imageIds.length > 0 ? imageIds : (report.geo_tagged_image_id ? [report.geo_tagged_image_id] : []),
+        lguPermits: {
+          mayorsPermit: !!establishment?.mayor_permit_no,
+          mpNumber: establishment?.mayor_permit_no || '',
+          mpDateIssued: establishment?.mayor_permit_issued || '',
+          mpExpiryDate: establishment?.mayor_permit_exp || '',
+          businessPermit: !!establishment?.business_permit_no,
+          bpNumber: establishment?.business_permit_no || '',
+          bpDateIssued: establishment?.business_permit_issued || '',
+          bpExpiryDate: establishment?.business_permit_exp || '',
+          buildingPermit: !!establishment?.building_permit_no,
+          bldgNumber: establishment?.building_permit_no || '',
+          bldgDateIssued: establishment?.building_permit_issued || '',
+          bldgExpiryDate: establishment?.building_permit_exp || '',
+        },
+        denrPermits: {
+          pambResolution: !!establishment?.pamb_resolution_no,
+          pambResolutionNo: establishment?.pamb_resolution_no || '',
+          pambDateIssued: establishment?.pamb_date_issued || '',
+          sapa: !!establishment?.sapa_no,
+          sapaNo: establishment?.sapa_no || '',
+          sapaDateIssued: establishment?.sapa_date_issued || '',
+          pacbrma: !!establishment?.pacbrma_no,
+          pacbrmaNo: establishment?.pacbrma_no || '',
+          pacbrmaDateIssued: establishment?.pacbrma_date_issued || '',
+          ecc: !!establishment?.ecc_no,
+          eccNo: establishment?.ecc_no || '',
+          eccDateIssued: establishment?.ecc_date_issued || '',
+          dischargePermit: !!establishment?.discharge_permit_no,
+          dpNo: establishment?.discharge_permit_no || '',
+          dpDateIssued: establishment?.discharge_date_issued || '',
+          permitToOperate: !!establishment?.pto_no,
+          ptoNo: establishment?.pto_no || '',
+          ptoDateIssued: establishment?.pto_date_issued || '',
+          otherPermits: establishment?.other_emb || '',
+        },
+        enumeratorName: report.enumerator_name || '',
+        enumeratorSignature: report.enumerator_signature || '',
+        informantName: report.informant_name || '',
+        informantSignature: report.informant_signature || '',
+        informantDate: report.informant_signature_date || '',
+        reportNotes: report.remarks || '',
+      });
+    } catch (error) {
+      console.error('Error loading report:', error);
+      Alert.alert('Error', 'Failed to load report for editing');
     }
   };
 
@@ -442,6 +572,11 @@ export default function EnumeratorsReport() {
 
     setSaving(true);
     try {
+      // Check if updating existing report
+      if (params.editId) {
+        await updateReport(parseInt(params.editId));
+        return;
+      }
       console.log('Form data before save:', {
         primaryGeoImageId: formData.primaryGeoImageId,
         proponentId: formData.proponentId,
@@ -591,6 +726,138 @@ export default function EnumeratorsReport() {
       console.error("Save error:", error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       Alert.alert("Error", `Failed to save report: ${errorMessage}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateReport = async (reportId: number) => {
+    try {
+      // Get existing report to find establishment_id
+      const { data: existingReport } = await supabase
+        .from("enumerators_report")
+        .select("establishment_id, proponent_id")
+        .eq("id", reportId)
+        .single();
+
+      if (!existingReport) throw new Error('Report not found');
+
+      // Update establishment profile
+      const selectedTypes = Object.keys(formData.establishmentTypes)
+        .filter(type => formData.establishmentTypes[type]);
+      let establishmentType = selectedTypes.join(', ');
+      if (formData.establishmentOther && formData.establishmentTypes["Others"]) {
+        establishmentType += establishmentType ? `, ${formData.establishmentOther}` : formData.establishmentOther;
+      }
+
+      await supabase
+        .from("establishment_profile")
+        .update({
+          establishment_name: formData.proponentName,
+          geo_tagged_image_id: formData.primaryGeoImageId,
+          lot_status: formData.lotStatus || null,
+          tax_declaration_no: formData.taxDeclarationNo || null,
+          land_classification: formData.landClassification || null,
+          title_no: formData.titleNo || null,
+          lot_no: formData.lotNo || null,
+          lot_owner: formData.lotOwner || null,
+          area_covered: formData.areaCovered || null,
+          pa_zone: formData.managementZone || null,
+          within_easement: formData.withinEasement,
+          establishment_status: formData.establishmentStatus || null,
+          establishment_type: establishmentType || null,
+          description: formData.establishmentNotes || null,
+          mayor_permit_no: formData.lguPermits.mpNumber || null,
+          mayor_permit_issued: formData.lguPermits.mpDateIssued || null,
+          mayor_permit_exp: formData.lguPermits.mpExpiryDate || null,
+          business_permit_no: formData.lguPermits.bpNumber || null,
+          business_permit_issued: formData.lguPermits.bpDateIssued || null,
+          business_permit_exp: formData.lguPermits.bpExpiryDate || null,
+          building_permit_no: formData.lguPermits.bldgNumber || null,
+          building_permit_issued: formData.lguPermits.bldgDateIssued || null,
+          building_permit_exp: formData.lguPermits.bldgExpiryDate || null,
+          pamb_resolution_no: formData.denrPermits.pambResolutionNo || null,
+          pamb_date_issued: formData.denrPermits.pambDateIssued || null,
+          sapa_no: formData.denrPermits.sapaNo || null,
+          sapa_date_issued: formData.denrPermits.sapaDateIssued || null,
+          pacbrma_no: formData.denrPermits.pacbrmaNo || null,
+          pacbrma_date_issued: formData.denrPermits.pacbrmaDateIssued || null,
+          ecc_no: formData.denrPermits.eccNo || null,
+          ecc_date_issued: formData.denrPermits.eccDateIssued || null,
+          discharge_permit_no: formData.denrPermits.dpNo || null,
+          discharge_date_issued: formData.denrPermits.dpDateIssued || null,
+          pto_no: formData.denrPermits.ptoNo || null,
+          pto_date_issued: formData.denrPermits.ptoDateIssued || null,
+          other_emb: formData.denrPermits.otherPermits || null,
+        })
+        .eq("id", existingReport.establishment_id);
+
+      // Update proponent if exists
+      if (existingReport.proponent_id) {
+        await supabase
+          .from("proponents")
+          .update({
+            name: formData.proponentName,
+            contact_number: formData.proponentContact || null,
+          })
+          .eq("id", existingReport.proponent_id);
+      }
+
+      // Get PA name
+      const { data: paData } = await supabase
+        .from("protected_areas")
+        .select("name")
+        .eq("id", formData.paId)
+        .single();
+
+      // Update main report
+      await supabase
+        .from("enumerators_report")
+        .update({
+          pa_id: formData.paId,
+          geo_tagged_image_id: formData.primaryGeoImageId,
+          enumerator_signature: formData.enumeratorSignature || null,
+          informant_name: formData.informantName || null,
+          informant_signature: formData.informantSignature || null,
+          informant_signature_date: formData.informantDate || null,
+          remarks: formData.reportNotes || null,
+          establishment_name: formData.proponentName,
+          proponent_name: formData.proponentName,
+          pa_name: paData?.name || null,
+        })
+        .eq("id", reportId);
+
+      // Update reported_images if images changed
+      if (formData.allImageIds && formData.allImageIds.length > 0) {
+        // Delete old image links
+        await supabase
+          .from("reported_images")
+          .delete()
+          .eq("report_id", reportId)
+          .eq("report_type", "enumerator");
+
+        // Insert new image links
+        const reportImages = formData.allImageIds.map((imageId, index) => ({
+          report_id: reportId,
+          report_type: 'enumerator',
+          image_id: imageId,
+          is_primary: imageId === formData.primaryGeoImageId,
+          image_sequence: index + 1,
+        }));
+
+        await supabase
+          .from("reported_images")
+          .insert(reportImages);
+      }
+
+      Alert.alert(
+        "Success",
+        "Report updated successfully",
+        [{ text: "OK", onPress: () => router.back() }]
+      );
+    } catch (error) {
+      console.error('Update error:', error);
+      Alert.alert('Error', 'Failed to update report');
     } finally {
       setSaving(false);
     }
