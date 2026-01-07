@@ -578,9 +578,10 @@ export default function CameraScreen() {
 
       console.log('✅ Database save successful! Image ID:', imageData.id);
 
-      // Update local storage
+      // Update local storage - use imageData.id from database
+      const localImageUrl = pendingUri;
       const rec: PhotoRecord = {
-        id: tempId,
+        id: imageData.id,
         uri: localImageUrl,
         lat: isFinite(latFixed) ? latFixed : 0,
         lon: isFinite(lonFixed) ? lonFixed : 0,
@@ -608,12 +609,12 @@ export default function CameraScreen() {
           }
           
           await AsyncStorage.setItem(CAMERA_RETURN_DATA_KEY, JSON.stringify({
-            primaryGeoImageId: tempId.toString(),
+            primaryGeoImageId: imageData.id.toString(),
             latitude: latFixed.toString(),
             longitude: lonFixed.toString(),
             location: finalLocation,
             totalImages: '1',
-            imageIds: tempId.toString(),
+            imageIds: imageData.id.toString(),
             imageUris: localImageUrl,
             timestamp: Date.now(),
           }));
