@@ -166,8 +166,13 @@ export default function ReportDetailsScreen() {
             };
           });
         
-        setImages(imageData);
-        console.log(`Loaded ${imageData.length} images for report ${reportId}`);
+        // Remove duplicates by image_id
+        const uniqueImages = imageData.filter((img, index, self) =>
+          index === self.findIndex((t) => t.id === img.id)
+        );
+        
+        setImages(uniqueImages);
+        console.log(`Loaded ${uniqueImages.length} unique images for report ${reportId}`);
       } else {
         console.log("No images found in reported_images, trying legacy method");
         

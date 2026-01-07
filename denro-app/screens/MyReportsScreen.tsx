@@ -40,6 +40,8 @@ export default function MyReportsScreen() {
   const [enumeratorName, setEnumeratorName] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentSort, setCurrentSort] = useState<SortOption>('newest');
+  const [currentPage, setCurrentPage] = useState(1);
+  const reportsPerPage = 5;
 
   useEffect(() => {
     initialize();
@@ -48,6 +50,7 @@ export default function MyReportsScreen() {
   useEffect(() => {
     // Apply search and sort whenever reports, searchQuery, or currentSort changes
     applyFiltersAndSort();
+    setCurrentPage(1); // Reset to page 1 when filters change
   }, [reports, searchQuery, currentSort]);
 
   const initialize = async () => {
@@ -195,6 +198,17 @@ export default function MyReportsScreen() {
     setSearchQuery('');
   };
 
+  const getPaginatedReports = () => {
+    const startIndex = (currentPage - 1) * reportsPerPage;
+    const endIndex = startIndex + reportsPerPage;
+    return filteredReports.slice(startIndex, endIndex);
+  };
+
+  const totalPages = Math.ceil(filteredReports.length / reportsPerPage);
+  const paginatedReports = getPaginatedReports();
+  const startIndex = (currentPage - 1) * reportsPerPage + 1;
+  const endIndex = Math.min(currentPage * reportsPerPage, filteredReports.length);
+
   const onRefresh = async () => {
     if (enumeratorId) {
       setRefreshing(true);
@@ -260,16 +274,6 @@ export default function MyReportsScreen() {
           <Text style={styles.reportId}>ID: {item.id}</Text>
         </View>
       </TouchableOpacity>
-
-      {/* Action Buttons */}
-      <View style={styles.actionButtons}>
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => handleEditReport(item)}
-        >
-          <Text style={styles.editButtonText}>✏️ Edit</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 
@@ -367,14 +371,35 @@ export default function MyReportsScreen() {
           </View>
         </View>
 
-        {/* Results Count */}
-        <Text style={styles.resultsCount}>
-          Showing {filteredReports.length} of {reports.length} {reports.length === 1 ? 'report' : 'reports'}
-        </Text>
+        {/* Results Count and Pagination */}
+        <View style={styles.paginationHeader}>
+          <Text style={styles.resultsCount}>
+            Showing {filteredReports.length > 0 ? startIndex : 0} - {endIndex} of {filteredReports.length} {filteredReports.length === 1 ? 'report' : 'reports'}
+          </Text>
+          {totalPages > 1 && (
+            <View style={styles.paginationControls}>
+              <TouchableOpacity
+                style={[styles.paginationButton, currentPage === 1 && styles.paginationButtonDisabled]}
+                onPress={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+              >
+                <Text style={[styles.paginationButtonText, currentPage === 1 && styles.paginationButtonTextDisabled]}>‹</Text>
+              </TouchableOpacity>
+              <Text style={styles.pageIndicator}>{currentPage} / {totalPages}</Text>
+              <TouchableOpacity
+                style={[styles.paginationButton, currentPage === totalPages && styles.paginationButtonDisabled]}
+                onPress={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+              >
+                <Text style={[styles.paginationButtonText, currentPage === totalPages && styles.paginationButtonTextDisabled]}>›</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
 
       <FlatList
-        data={filteredReports}
+        data={paginatedReports}
         renderItem={renderReportCard}
         keyExtractor={(item) => item.id.toString()}
         contentContainerStyle={styles.listContent}
@@ -501,10 +526,46 @@ const styles = StyleSheet.create({
   sortButtonTextActive: {
     color: '#fff',
   },
+  paginationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   resultsCount: {
     fontSize: 12,
     color: '#0ea5e9',
     fontWeight: '600',
+  },
+  paginationControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  paginationButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    backgroundColor: '#0ea5e9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  paginationButtonDisabled: {
+    backgroundColor: '#e5e7eb',
+  },
+  paginationButtonText: {
+    fontSize: 24,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  paginationButtonTextDisabled: {
+    color: '#9ca3af',
+  },
+  pageIndicator: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '600',
+    minWidth: 40,
+    textAlign: 'center',
   },
   listContent: {
     padding: 16,
@@ -596,21 +657,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9ca3af',
     fontWeight: '600',
-  },
-  actionButtons: {
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-  },
-  editButton: {
-    backgroundColor: '#dbeafe',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  editButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#1d4ed8',
   },
   emptyContainer: {
     alignItems: 'center',
