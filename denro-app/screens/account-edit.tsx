@@ -186,7 +186,14 @@ export default function AccountEditScreen() {
       Alert.alert("Invalid email", "Only @gmail.com or @denr.gov.ph allowed.");
       return false;
     }
+
+    if (phone.trim() && phone.trim().length !== 11) {
+  Alert.alert("Invalid phone number", "Phone number must be exactly 11 digits.");
+  return false;
+}
     return true;
+
+    
   };
 
   // ✅ Save profile info

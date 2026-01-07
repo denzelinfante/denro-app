@@ -166,8 +166,13 @@ export default function ReportDetailsScreen() {
             };
           });
         
-        setImages(imageData);
-        console.log(`Loaded ${imageData.length} images for report ${reportId}`);
+        // Remove duplicates by image_id
+        const uniqueImages = imageData.filter((img, index, self) =>
+          index === self.findIndex((t) => t.id === img.id)
+        );
+        
+        setImages(uniqueImages);
+        console.log(`Loaded ${uniqueImages.length} unique images for report ${reportId}`);
       } else {
         console.log("No images found in reported_images, trying legacy method");
         
@@ -402,12 +407,11 @@ export default function ReportDetailsScreen() {
   </View>
 </View>
 <TouchableOpacity
-      style={styles.trackButton}
-        onPress={() => router.push(`/TrackRoutes?reportId=${report?.id}`)}
-    >
-      <Text style={styles.trackButtonText}>Track</Text>
-    </TouchableOpacity>
-
+                style={styles.trackButton}
+                onPress={() => router.push(`/TrackRoutes?reportId=${report?.id}`)}
+              >
+                <Text style={styles.trackButtonText}>📍 Track Route</Text>
+              </TouchableOpacity>
         {/* Establishment Details */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Establishment Details</Text>
@@ -882,20 +886,18 @@ const styles = StyleSheet.create({
   },
 
   trackButton: {
-  marginLeft: 6,          // slightly smaller gap
-  backgroundColor: "#22c55e",
-  paddingVertical: 4,     // reduced height
-  paddingHorizontal: 8,   // reduced width
-  borderRadius: 4,        // smaller rounded corners
-  minWidth: 50,           // optional fixed min width
-  alignItems: "center",
-  justifyContent: "center",
-},
-
-trackButtonText: {
-  color: "#fff",
-  fontSize: 10,           // smaller font
-  fontWeight: "600",
-},
+    marginLeft: 8,
+    backgroundColor: "#22c55e",
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  trackButtonText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "600",
+  },
 
 });

@@ -63,7 +63,7 @@ export default function DashboardScreen() {
         <TouchableOpacity onPress={() => router.push('/dashboard')}>
           <Text style={styles.navLink}>Dashboard</Text>
         </TouchableOpacity>
-       
+        
         <TouchableOpacity onPress={handleLogout}>
           <Text style={styles.navLink}>Logout</Text>
         </TouchableOpacity>
