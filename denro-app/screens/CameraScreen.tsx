@@ -420,7 +420,7 @@ export default function CameraScreen() {
 
       // Store image metadata locally
       const rec: PhotoRecord = {
-        id: imageData.id,
+        id: tempId,
         uri: localImageUrl,
         lat: isFinite(latFixed) ? latFixed : 0,
         lon: isFinite(lonFixed) ? lonFixed : 0,
@@ -448,12 +448,12 @@ export default function CameraScreen() {
           }
           
           await AsyncStorage.setItem(CAMERA_RETURN_DATA_KEY, JSON.stringify({
-            primaryGeoImageId: imageData.id.toString(),
+            primaryGeoImageId: tempId.toString(),
             latitude: latFixed.toString(),
             longitude: lonFixed.toString(),
             location: finalLocation,
             totalImages: '1',
-            imageIds: imageData.id.toString(),
+            imageIds: tempId.toString(),
             imageUris: localImageUrl,
             timestamp: Date.now(),
           }));
