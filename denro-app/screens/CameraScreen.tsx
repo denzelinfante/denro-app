@@ -213,12 +213,7 @@ export default function CameraScreen() {
     return locationAddress;
   };
 
-  useEffect(() => {
-    console.log('=== DEBUG INFO ===');
-    console.log('STORAGE_BUCKET constant:', STORAGE_BUCKET);
-    console.log('Expected:', 'geo-tagged-photos');
-    console.log('Match:', STORAGE_BUCKET === 'geo-tagged-photos');
-  }, []);
+
 
   useEffect(() => {
     (async () => {
