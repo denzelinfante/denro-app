@@ -81,6 +81,7 @@ interface ReportDetails {
   remarks: string | null;
   created_at: string;
   geo_tagged_image_id: number | null;
+  attestation_id: number | null;
 }
 
 interface GeoImage {
@@ -214,6 +215,60 @@ export default function ReportDetailsScreen() {
           onPress: () => {
             // TODO: Navigate to edit screen with report ID
             router.push(`/Enumerators/EnumeratorsReport?editId=${report?.id}`);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleNewEntry = async () => {
+    if (!report) return;
+
+    // Check if report has attestation_id
+    if (!report.attestation_id) {
+      Alert.alert(
+        "Attestation Required",
+        "This report has not been attested yet. Please contact your supervisor or the Protected Area Superintendent to complete the attestation process before creating a new entry.",
+        [{ text: "OK", style: "default" }]
+      );
+      return;
+    }
+
+    // Fetch attestation data to check if attested_by_name and noted_by_name exist
+    const { data: attestationData, error: attestError } = await supabase
+      .from("attestation_notations")
+      .select("attested_by_name, noted_by_name")
+      .eq("id", report.attestation_id)
+      .single();
+
+    if (attestError || !attestationData) {
+      Alert.alert(
+        "Attestation Required",
+        "This report has not been attested yet. Please contact your supervisor or the Protected Area Superintendent to complete the attestation process before creating a new entry.",
+        [{ text: "OK", style: "default" }]
+      );
+      return;
+    }
+
+    // Check if both attested_by_name and noted_by_name are not null
+    if (!attestationData.attested_by_name || !attestationData.noted_by_name) {
+      Alert.alert(
+        "Attestation Required",
+        "This report has not been fully attested yet. Please contact your supervisor or the Protected Area Superintendent to complete the attestation process before creating a new entry.",
+        [{ text: "OK", style: "default" }]
+      );
+      return;
+    }
+
+    Alert.alert(
+      "New Entry",
+      "This will create a new version in establishment history and allow you to update the establishment data. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Continue",
+          onPress: () => {
+            router.push(`/Enumerators/EnumeratorsReport?editId=${report.id}&newEntry=true`);
           },
         },
       ]
@@ -484,6 +539,13 @@ export default function ReportDetailsScreen() {
           onPress={handleUpdate}
         >
           <Text style={styles.updateBtnText}>Update Report</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity
+          style={styles.newEntryBtn}
+          onPress={handleNewEntry}
+        >
+          <Text style={styles.newEntryBtnText}>New Entry</Text>
         </TouchableOpacity>
       </View>
 
@@ -832,13 +894,25 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   updateBtn: {
-    flex: 2,
+    flex: 1,
     backgroundColor: '#0ea5e9',
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: 'center',
   },
   updateBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  newEntryBtn: {
+    flex: 1,
+    backgroundColor: '#10b981',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  newEntryBtnText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',

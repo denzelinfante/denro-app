@@ -175,7 +175,7 @@ export default function CollectionScreen() {
           <Text style={styles.appName}>DENR GeoCam</Text>
           <View style={styles.linksRow}>
             <TouchableOpacity onPress={() => router.push('/home')}><Text style={styles.link}>Home</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push('/dashboard')}><Text style={styles.link}>Dashboard</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/EstablishmentHistory')}><Text style={styles.link}>Establishment History</Text></TouchableOpacity>
             
             <TouchableOpacity onPress={() => router.replace('/login')}><Text style={styles.link}>Logout</Text></TouchableOpacity>
           </View>
