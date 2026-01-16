@@ -1,6 +1,6 @@
 // screens/HomeScreen.tsx
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Pressable } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Pressable, Alert } from 'react-native';
 import { Ionicons, Entypo, FontAwesome } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -36,8 +36,61 @@ export default function HomeScreen() {
   useEffect(() => { loadHeaderInfo(); }, [refresh, loadHeaderInfo]);
 
   const handleLogout = async () => {
-    await signOutLocal();
-    router.replace('/login');
+    Alert.alert(
+      'Do you wish to proceed?',
+      '',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes', onPress: async () => {
+          await signOutLocal();
+          router.replace('/login');
+        }}
+      ]
+    );
+  };
+
+  const handleTemplate = () => {
+    Alert.alert(
+      'Do you wish to proceed?',
+      '',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes', onPress: () => router.push('/Enumerators/EnumeratorsReport') }
+      ]
+    );
+  };
+
+  const handleCamera = () => {
+    Alert.alert(
+      'Do you wish to proceed?',
+      '',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes', onPress: () => router.push('/CameraScreen') }
+      ]
+    );
+  };
+
+  const handleCollection = () => {
+    Alert.alert(
+      'Do you wish to proceed?',
+      '',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes', onPress: () => router.push('/MyReportsScreen') }
+      ]
+    );
+  };
+
+  const handleEstablishmentHistory = () => {
+    Alert.alert(
+      'Do you wish to proceed?',
+      '',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes', onPress: () => router.push('/EstablishmentHistory') }
+      ]
+    );
   };
 
   return (
@@ -54,7 +107,7 @@ export default function HomeScreen() {
       {/* Top nav */}
       <View style={styles.navRow}>
         <TouchableOpacity onPress={() => router.push('/home')}><Text style={styles.navLink}>Home</Text></TouchableOpacity>
-        <TouchableOpacity onPress={() => router.push('/EstablishmentHistory')}><Text style={styles.navLink}>Establishment History</Text></TouchableOpacity>
+        <TouchableOpacity onPress={handleEstablishmentHistory}><Text style={styles.navLink}>Establishment History</Text></TouchableOpacity>
         <TouchableOpacity onPress={handleLogout}><Text style={styles.navLink}>Logout</Text></TouchableOpacity>
       </View>
 
@@ -67,9 +120,9 @@ export default function HomeScreen() {
 
       {/* Bottom nav */}
       <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navIcon} onPress={() => router.push('/Enumerators/EnumeratorsReport')}><Entypo name="list" size={24} color="black" /><Text>Template</Text></TouchableOpacity>
-        <TouchableOpacity style={[styles.navIcon, styles.activeIcon]} onPress={() => router.push('/CameraScreen')}><Ionicons name="camera" size={24} color="black" /><Text>Camera</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.navIcon} onPress={() => router.push('/MyReportsScreen')}><FontAwesome name="image" size={24} color="black" /><Text>Collection</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.navIcon} onPress={handleTemplate}><Entypo name="list" size={24} color="black" /><Text>Template</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.navIcon, styles.activeIcon]} onPress={handleCamera}><Ionicons name="camera" size={24} color="black" /><Text>Camera</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.navIcon} onPress={handleCollection}><FontAwesome name="image" size={24} color="black" /><Text>Collection</Text></TouchableOpacity>
       </View>
 
       <SettingsMenu visible={menuVisible} onClose={() => setMenuVisible(false)} />

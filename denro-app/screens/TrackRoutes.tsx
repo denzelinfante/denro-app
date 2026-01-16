@@ -305,7 +305,7 @@ export default function TrackRoutesScreen() {
           {routePoints.map((point, index) => (
             <TouchableOpacity 
               key={point.id} 
-              style={styles.pointItem}
+              style={[styles.pointItem, { backgroundColor: index % 2 === 0 ? '#ffc0cb' : '#90ee90' }]}
               onPress={() => Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${point.latitude},${point.longitude}`)}
               activeOpacity={0.7}
             >
